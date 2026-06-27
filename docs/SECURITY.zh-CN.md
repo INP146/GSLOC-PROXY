@@ -1,4 +1,6 @@
-# Security and Support Policy
+# 安全与支持政策
+
+<p><a href="../SECURITY.md">English</a> | <b>简体中文</b></p>
 
 本文档说明 GSLOC-PROXY 的安全研究范围、维护者支持边界、问题报告方式和使用者合规责任。它用于帮助贡献者和使用者判断哪些问题适合公开讨论、哪些场景不会获得项目支持。
 
