@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import type { FormInst } from "naive-ui";
-import { createDiscreteApi } from "naive-ui";
+import { createDiscreteApi, NIcon } from "naive-ui";
+import { LogoGithub } from "@vicons/ionicons5";
 import { fetchAuthStatus, login, logout, onAuthChanged } from "./api";
 import AppHeader from "./components/AppHeader.vue";
 import DashboardView from "./components/DashboardView.vue";
@@ -20,6 +21,8 @@ const auth = ref<AuthStatus | null>(null);
 const authChecking = ref(true);
 const loginLoading = ref(false);
 const loginError = ref("");
+const repositoryUrl = "https://github.com/INP146/GSLOC-PROXY";
+const copyrightNotice = "Copyright (c) 2026 @INP146";
 let refreshTimer: number | null = null;
 let removeAuthListener: (() => void) | null = null;
 
@@ -87,7 +90,10 @@ function refreshActiveTab() {
 }
 
 function isAuthenticated(nextAuth: AuthStatus | null = auth.value) {
-  return Boolean(nextAuth) && (!nextAuth?.auth_required || Boolean(nextAuth?.authenticated));
+  return (
+    Boolean(nextAuth) &&
+    (!nextAuth?.auth_required || Boolean(nextAuth?.authenticated))
+  );
 }
 
 function stopRefreshTimer() {
@@ -101,7 +107,8 @@ function startRefreshTimer() {
   stopRefreshTimer();
   refreshTimer = window.setInterval(() => {
     refresh({ quiet: true, silent: true });
-    if (activeTab.value === "logs") refreshLogs({ silent: true, loading: false });
+    if (activeTab.value === "logs")
+      refreshLogs({ silent: true, loading: false });
   }, 1000);
 }
 
@@ -189,12 +196,21 @@ onUnmounted(() => {
       <n-spin size="large" />
     </div>
 
-    <LoginView
-      v-else-if="!isAuthenticated()"
-      :loading="loginLoading"
-      :error="loginError"
-      @login="handleLogin"
-    />
+    <div v-else-if="!isAuthenticated()" class="login-page">
+      <LoginView
+        :loading="loginLoading"
+        :error="loginError"
+        @login="handleLogin"
+      />
+      <footer class="app-footer">
+        <a :href="repositoryUrl" target="_blank" rel="noopener noreferrer">
+          <n-icon :component="LogoGithub" />
+          <span>GSLOC-PROXY</span>
+        </a>
+        <span class="footer-divider">|</span>
+        <span>{{ copyrightNotice }}</span>
+      </footer>
+    </div>
 
     <n-layout v-else class="app-layout">
       <AppHeader
@@ -213,7 +229,12 @@ onUnmounted(() => {
       />
 
       <div class="app-tabs">
-        <n-tabs :value="activeTab" type="line" animated @update:value="changeTab">
+        <n-tabs
+          :value="activeTab"
+          type="line"
+          animated
+          @update:value="changeTab"
+        >
           <n-tab name="dashboard">状态面板</n-tab>
           <n-tab name="logs">日志</n-tab>
         </n-tabs>
@@ -255,6 +276,15 @@ onUnmounted(() => {
           @refresh="refreshLogs()"
         />
       </n-layout-content>
+
+      <n-layout-footer class="app-footer">
+        <a :href="repositoryUrl" target="_blank" rel="noopener noreferrer">
+          <n-icon :component="LogoGithub" />
+          <span>GSLOC-PROXY</span>
+        </a>
+        <span class="footer-divider">|</span>
+        <span>{{ copyrightNotice }}</span>
+      </n-layout-footer>
     </n-layout>
 
     <MapPickerModal

@@ -35,6 +35,8 @@ body {
 
 .app-layout {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: transparent;
 }
 
@@ -44,6 +46,17 @@ body {
   display: grid;
   place-items: center;
   padding: 24px;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-page .login-shell {
+  flex: 1;
+  min-height: 0;
 }
 
 .login-card {
@@ -211,7 +224,47 @@ body {
 }
 
 .app-content {
+  flex: 1;
   padding: 12px 0 36px;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 0 0 18px;
+  color: var(--text-soft);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+}
+
+.app-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font-weight: 400;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: var(--text-muted);
+}
+
+.app-footer .n-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.footer-divider {
+  margin: 0 8px;
+  color: var(--panel-border);
 }
 
 .n-card {
