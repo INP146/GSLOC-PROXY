@@ -99,7 +99,7 @@ class GslocProxyAddon:
             name="gsloc_restart_flag",
             typespec=str,
             default="",
-            help="Path touched before programmatic restart so run-local.sh can restart mitmdump.",
+            help="Path touched before programmatic restart so the local launcher can restart mitmdump.",
         )
         loader.add_option(
             name="gsloc_log_level",

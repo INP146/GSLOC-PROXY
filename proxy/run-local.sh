@@ -36,7 +36,7 @@ while true; do
     --set "confdir=$MITMPROXY_CONF_DIR" \
     --mode regular \
     --listen-host 127.0.0.1 \
-    --listen-port "${GSLOC_PROXY_PORT:-8080}" \
+    --listen-port "${GSLOC_PROXY_PORT:-8082}" \
     --set "gsloc_policy=$POLICY_PATH" \
     --set "gsloc_state=$STATE_PATH" \
     --set "gsloc_manage_user=${GSLOC_MANAGE_USER:-admin}" \

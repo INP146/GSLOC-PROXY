@@ -61,19 +61,31 @@
 
 ### 1. 创建虚拟环境
 
-不要直接用系统 Python 全局安装依赖。推荐使用项目脚本创建隔离环境：
+不要直接用系统 Python 全局安装依赖。推荐使用跨平台 Python 脚本创建隔离环境：
 
 ```bash
 cd proxy
-./setup-venv.sh
+python setup-venv.py
 ```
 
+如果系统里 `python` 指向 Python 2 或较旧版本，请改用 `python3 setup-venv.py` 或 `py -3 setup-venv.py`。
+
 ### 2. 准备本地配置
+
+macOS/Linux：
 
 ```bash
 cp .env.example .env
 cp policy.example.json policy.json
 cp state.example.json state.json
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item policy.example.json policy.json
+Copy-Item state.example.json state.json
 ```
 
 默认管理控制台监听：
@@ -91,10 +103,17 @@ http://127.0.0.1:8090/
 ### 3. 启动代理
 
 ```bash
-./run-local.sh
+python run-local.py
 ```
 
 启动后可以在控制台中生成或下载当前 mitmproxy CA 证书。授权测试设备需要安装并信任该 CA，否则 HTTPS 实验链路无法建立。
+
+macOS/Linux 用户也可以继续使用保留的 bash 入口：
+
+```bash
+./setup-venv.sh
+./run-local.sh
+```
 
 ## 配置说明
 
@@ -111,7 +130,7 @@ GSLOC_MANAGE_PASSWORD=change-this-to-a-long-random-password
 
 ### `policy.json`
 
-定义代理允许处理的 host 和 path。公开版本应保持严格 allowlist，不应扩展为通用代理。
+定义代理允许处理的 host 和 path。
 
 ### `state.json`
 
@@ -162,8 +181,15 @@ Web 控制台提供以下功能：
 
 ```bash
 cd proxy
-./setup-venv.sh
-./run-local.sh
+python setup-venv.py
+python run-local.py
+```
+
+Windows 上如果 `python` 不是 Python 3.11+，可改用：
+
+```powershell
+py -3 setup-venv.py
+py -3 run-local.py
 ```
 
 前端：
