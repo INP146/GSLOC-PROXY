@@ -1,6 +1,6 @@
 # GSLOC-PROXY
 
-`GSLOC-PROXY` 是一个用于授权实验环境的网络层定位完整性测试代理。它帮助移动应用开发者、安全研究者和风控团队复现一种特定威胁模型：应用本身没有被 Hook、注入或使用系统模拟定位，但系统定位依赖的上游网络信号在受控实验网络中被修改。
+`GSLOC-PROXY` 是一个用于授权实验环境的网络层定位完整性测试代理。它帮助移动应用开发者、安全研究者和风控团队复现一种特定威胁模型：应用本身没有被 Hook、注入、调试或使用系统模拟定位，但系统定位依赖的上游网络信号在受控实验网络中被修改。
 
 <p><a href="../README.md">English</a> | <b>简体中文</b></p>
 
@@ -8,7 +8,7 @@
 
 本项目的重点不是证明“定位可以被修改”，而是帮助开发者验证自己的应用是否过度信任系统定位结果，以及是否具备足够的多源校验、风险评分和异常处理能力。
 
-> 本项目只面向自有设备、自有应用、授权账号和受控实验网络中的安全研究、防御测试和风控鲁棒性验证。
+> 本项目只面向你拥有或获得授权测试的设备、应用、账号和受控网络，用于安全研究、防御测试和风控鲁棒性验证。
 >
 > 本项目不面向，也不应被用于绕过打卡、游戏、金融、配送平台、地区限制、反作弊、平台风控或任何第三方应用策略。
 >
@@ -63,7 +63,7 @@
 
 ### 1. 创建虚拟环境
 
-不要直接用系统 Python 全局安装依赖。推荐使用跨平台 Python 脚本创建隔离环境：
+不要直接用系统 Python 全局安装依赖。使用跨平台 Python 脚本创建隔离环境：
 
 ```bash
 cd proxy
@@ -116,6 +116,40 @@ macOS/Linux 用户也可以继续使用保留的 bash 入口：
 ./setup-venv.sh
 ./run-local.sh
 ```
+
+## Docker Compose
+
+构建并启动一体化容器：
+
+```bash
+docker compose up --build
+```
+
+默认访问地址：
+
+```text
+管理控制台：http://127.0.0.1:8090/
+代理入口：  127.0.0.1:8082
+```
+
+Compose 会把 Web 控制台编译进 Python 镜像，默认只将两个端口发布到宿主机 `127.0.0.1`，只读挂载 `proxy/policy.example.json` 作为策略文件，并用 `gsloc-proxy-data` Docker volume 保存运行状态、日志和 mitmproxy CA。
+
+常用覆盖：
+
+```bash
+# 使用自己的私有策略文件。
+GSLOC_POLICY_FILE=./proxy/policy.json docker compose up --build
+
+# 给管理控制台启用登录。
+GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' docker compose up --build
+
+# 仅可信局域网：允许另一台授权设备访问代理和控制台。
+GSLOC_COMPOSE_BIND=0.0.0.0 \
+GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' \
+docker compose up --build
+```
+
+不要把服务暴露到公网。监听 `0.0.0.0` 时，仅限可信局域网和授权设备使用，并设置强管理密码。
 
 ## 配置说明
 
@@ -210,6 +244,8 @@ npm run build
 ```
 
 构建产物会输出到 `proxy/gsloc_proxy/static/`，该目录默认不进入仓库。
+
+GitHub Actions 会在提交到 `develop` 的 pull request 中检查 Docker 镜像构建；推送到 `develop` 或 `v0.1.0` 这类版本标签时，会发布镜像到 GitHub Container Registry：`ghcr.io/<owner>/<repo>`。
 
 ## 许可
 

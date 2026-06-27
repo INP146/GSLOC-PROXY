@@ -17,7 +17,7 @@ def main() -> int:
     _load_env_file(ROOT / ".env", env)
     _configure_macos_expat(env)
 
-    mitmdump = _mitmdump_path(ROOT / ".venv")
+    mitmdump = _mitmdump_path(ROOT / ".venv", env.get("MITMDUMP_BIN", ""))
     if mitmdump is None:
         print(
             "没有找到本项目虚拟环境里的 mitmdump。\n\n"
@@ -42,7 +42,7 @@ def main() -> int:
             "--mode",
             "regular",
             "--listen-host",
-            "127.0.0.1",
+            _env_or_default(env, "GSLOC_PROXY_HOST", "127.0.0.1"),
             "--listen-port",
             _env_or_default(env, "GSLOC_PROXY_PORT", "8082"),
             "--set",
@@ -136,7 +136,16 @@ def _configure_macos_expat(env: dict[str, str]) -> None:
     env["DYLD_LIBRARY_PATH"] = f"{expat_lib}:{existing}" if existing else expat_lib
 
 
-def _mitmdump_path(venv_dir: Path) -> Path | None:
+def _mitmdump_path(venv_dir: Path, explicit: str = "") -> str | None:
+    if explicit:
+        resolved = shutil.which(explicit)
+        if resolved:
+            return resolved
+        explicit_path = Path(explicit)
+        if explicit_path.exists():
+            return str(explicit_path)
+        return explicit
+
     candidates = (
         [venv_dir / "Scripts" / "mitmdump.exe", venv_dir / "Scripts" / "mitmdump"]
         if os.name == "nt"
@@ -144,7 +153,7 @@ def _mitmdump_path(venv_dir: Path) -> Path | None:
     )
     for candidate in candidates:
         if candidate.exists():
-            return candidate
+            return str(candidate)
     return None
 
 

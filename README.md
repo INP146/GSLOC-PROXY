@@ -119,6 +119,40 @@ macOS/Linux users can also use the retained bash entry points:
 ./run-local.sh
 ```
 
+## Docker Compose
+
+Build and start the all-in-one container:
+
+```bash
+docker compose up --build
+```
+
+Default endpoints:
+
+```text
+Management console: http://127.0.0.1:8090/
+Proxy endpoint:      127.0.0.1:8082
+```
+
+The Compose setup builds the Web console into the Python image, publishes both ports to `127.0.0.1` on the host by default, mounts `proxy/policy.example.json` as the read-only policy, and stores runtime state, logs, and the mitmproxy CA in the `gsloc-proxy-data` Docker volume.
+
+Common overrides:
+
+```bash
+# Use your own private policy file.
+GSLOC_POLICY_FILE=./proxy/policy.json docker compose up --build
+
+# Require management console login.
+GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' docker compose up --build
+
+# Trusted LAN only: allow another authorized device to reach the proxy and console.
+GSLOC_COMPOSE_BIND=0.0.0.0 \
+GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' \
+docker compose up --build
+```
+
+Do not publish the service to the public internet. When binding to `0.0.0.0`, use it only on a trusted LAN with authorized devices and set a strong management password.
+
 ## Configuration
 
 ### `.env`
@@ -212,6 +246,8 @@ npm run build
 ```
 
 The build output is written to `proxy/gsloc_proxy/static/`, which is not tracked by default.
+
+Docker image builds are checked by GitHub Actions on pull requests to `develop`. Pushes to `develop` and version tags such as `v0.1.0` publish images to GitHub Container Registry as `ghcr.io/<owner>/<repo>`.
 
 ## License
 

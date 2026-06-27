@@ -1,0 +1,36 @@
+# Docker 构建上下文不需要的仓库元数据
+.git/
+.github/
+
+# 本地分析和 Claude Code 会话数据
+.claude/
+iphone-mitm-analysis/
+
+# Python / 本地运行产物
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+.venv/
+proxy/.venv/
+*.egg-info/
+**/*.egg-info/
+
+# 本地私有配置
+.env
+proxy/.env
+proxy/policy.json
+proxy/state.json
+proxy/.restart-requested
+proxy/.mitmproxy/
+proxy/logs/
+*.log
+
+# Web 前端依赖和构建产物
+node_modules/
+web/node_modules/
+web/dist/
+proxy/gsloc_proxy/static/
+
+# macOS
+.DS_Store
