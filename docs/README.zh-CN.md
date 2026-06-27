@@ -155,7 +155,7 @@ Git tag `v0.1.0` 会发布 `0.1.0` 和 `0.1` 这类 GHCR 镜像 tag。
 代理入口：  127.0.0.1:8082
 ```
 
-Compose 默认只将两个端口发布到宿主机 `127.0.0.1`，并用 `gsloc-proxy-data` Docker volume 保存运行状态、日志和 mitmproxy CA。镜像内置默认示例策略到 `/config/policy.json`，所以单个 Compose 文件即可启动服务。
+Compose 默认只将两个端口发布到宿主机 `127.0.0.1`，并用 `gsloc-proxy-data` Docker volume 保存运行状态、日志和 mitmproxy CA。首次启动时，镜像会从源码中的 `policy.example.json` 和 `state.example.json` 初始化缺失的 `/config/policy.json` 和 `/data/state.json`，与本地部署的复制逻辑一致；Docker volume 中已有的文件不会被覆盖。
 
 端口默认只允许本机访问：
 

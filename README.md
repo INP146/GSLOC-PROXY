@@ -157,7 +157,7 @@ Management console: http://127.0.0.1:8090/
 Proxy endpoint:      127.0.0.1:8082
 ```
 
-The Compose setup publishes both ports to `127.0.0.1` on the host by default and stores runtime state, logs, and the mitmproxy CA in the `gsloc-proxy-data` Docker volume. The image includes the default example policy at `/config/policy.json`, so a single Compose file can start the service.
+The Compose setup publishes both ports to `127.0.0.1` on the host by default and stores runtime state, logs, and the mitmproxy CA in the `gsloc-proxy-data` Docker volume. On first start, the image seeds missing `/config/policy.json` and `/data/state.json` from the source `policy.example.json` and `state.example.json`, matching the local copy-based setup. Existing files in the Docker volume are preserved.
 
 Ports default to local-only access:
 

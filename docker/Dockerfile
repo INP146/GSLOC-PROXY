@@ -22,23 +22,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
-    && mkdir -p /config \
+    && mkdir -p /config /defaults \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/proxy
 COPY proxy/pyproject.toml ./
 COPY proxy/gsloc_proxy ./gsloc_proxy
 COPY proxy/run-local.py ./
-COPY proxy/policy.example.json /config/policy.json
+COPY proxy/policy.example.json /defaults/policy.example.json
+COPY proxy/state.example.json /defaults/state.example.json
+COPY docker/entrypoint.sh /usr/local/bin/gsloc-proxy-entrypoint
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -e .
 COPY --from=web-build /app/proxy/gsloc_proxy/static ./gsloc_proxy/static
 
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /config /data/logs /data/mitmproxy \
-    && chown -R appuser:appuser /app /config /data /tmp
+    && chmod +x /usr/local/bin/gsloc-proxy-entrypoint \
+    && chown -R appuser:appuser /app /config /data /defaults /tmp
 USER appuser
 
 VOLUME ["/data"]
 EXPOSE 8082 8090
+ENTRYPOINT ["gsloc-proxy-entrypoint"]
 CMD ["python", "run-local.py"]
