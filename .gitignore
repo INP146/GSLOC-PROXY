@@ -16,6 +16,8 @@ proxy/policy.json
 proxy/state.json
 proxy/.restart-requested
 proxy/.mitmproxy/
+proxy/logs/
+*.log
 
 # Web 前端依赖和构建产物
 node_modules/

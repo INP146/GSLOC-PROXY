@@ -38,6 +38,64 @@ body {
   background: transparent;
 }
 
+.auth-loading,
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(420px, 100%);
+}
+
+.login-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.login-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.login-mark .n-icon {
+  font-size: 25px;
+}
+
+.login-heading p {
+  margin: 0 0 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.login-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 760;
+  line-height: 1.15;
+}
+
+.login-alert {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.login-form {
+  display: grid;
+  gap: 4px;
+}
+
 .app-header {
   display: flex;
   align-items: center;
@@ -126,6 +184,12 @@ body {
   min-width: 92px;
   height: 34px;
   padding: 0 13px;
+}
+
+.header-actions .header-icon-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
 }
 
 .app-tabs,
@@ -440,11 +504,17 @@ body {
 }
 
 .logs-card {
-  min-height: 420px;
+  --logs-body-height: max(360px, calc(100vh - 260px));
+  min-height: calc(var(--logs-body-height) + 76px);
+}
+
+.logs-card .n-spin-container,
+.logs-card .n-spin-content {
+  min-height: var(--logs-body-height);
 }
 
 .logs-empty {
-  min-height: 360px;
+  min-height: var(--logs-body-height);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -456,8 +526,8 @@ body {
 }
 
 .terminal-log {
-  min-height: 360px;
-  max-height: calc(100vh - 260px);
+  min-height: var(--logs-body-height);
+  max-height: var(--logs-body-height);
   overflow: auto;
   margin: 0;
   padding: 14px 16px;
@@ -703,6 +773,12 @@ body {
     padding: 0 11px;
   }
 
+  .header-actions .header-icon-button {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+  }
+
   .summary-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -765,6 +841,12 @@ body {
     min-width: 76px;
     height: 32px;
     padding: 0 10px;
+  }
+
+  .header-actions .header-icon-button {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
   }
 
   .app-content {
@@ -851,6 +933,10 @@ body {
 
   .header-actions .n-button {
     flex: 1 1 0;
+  }
+
+  .header-actions .header-icon-button {
+    flex: 0 0 32px;
   }
 
   .header-main h1 {

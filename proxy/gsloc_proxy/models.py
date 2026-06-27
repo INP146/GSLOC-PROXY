@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class TargetState:
-    lat = 0.0
-    lng = 0.0
-    name = "Authorized Test Location"
+    lat: float = 0.0
+    lng: float = 0.0
+    name: str = "Authorized Test Location"
     mode: str = "clamp"
     scale: float = 1.0
 
@@ -22,6 +22,9 @@ class FavoriteLocation:
 
 @dataclass(frozen=True)
 class RuntimeState:
+    proxy_enabled: bool = True
+    session_id: int = 1
+    session_started_at: float | None = None
     enabled: bool = True
     target: TargetState = TargetState()
     favorites: tuple[FavoriteLocation, ...] = ()

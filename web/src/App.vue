@@ -2,18 +2,26 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import type { FormInst } from "naive-ui";
 import { createDiscreteApi } from "naive-ui";
+import { fetchAuthStatus, login, logout, onAuthChanged } from "./api";
 import AppHeader from "./components/AppHeader.vue";
 import DashboardView from "./components/DashboardView.vue";
+import LoginView from "./components/LoginView.vue";
 import LogsView from "./components/LogsView.vue";
 import MapPickerModal from "./components/MapPickerModal.vue";
 import { useLogs } from "./composables/useLogs";
 import { useMapPicker } from "./composables/useMapPicker";
 import { useRuntimeStatus } from "./composables/useRuntimeStatus";
 import { themeOverrides } from "./theme";
+import type { AuthStatus, LoginPayload } from "./types";
 
 const { message } = createDiscreteApi(["message"]);
 const activeTab = ref("dashboard");
+const auth = ref<AuthStatus | null>(null);
+const authChecking = ref(true);
+const loginLoading = ref(false);
+const loginError = ref("");
 let refreshTimer: number | null = null;
+let removeAuthListener: (() => void) | null = null;
 
 const runtimeState = useRuntimeStatus(message);
 const logsState = useLogs(message);
@@ -45,6 +53,7 @@ const {
   saveTarget,
   changeMode,
   toggleEnabled,
+  toggleProxyEnabled,
   resetState,
   favoriteCurrentTarget,
   applyFavoriteLocation,
@@ -77,6 +86,75 @@ function refreshActiveTab() {
   return refresh();
 }
 
+function isAuthenticated(nextAuth: AuthStatus | null = auth.value) {
+  return Boolean(nextAuth) && (!nextAuth?.auth_required || Boolean(nextAuth?.authenticated));
+}
+
+function stopRefreshTimer() {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+function startRefreshTimer() {
+  stopRefreshTimer();
+  refreshTimer = window.setInterval(() => {
+    refresh({ quiet: true, silent: true });
+    if (activeTab.value === "logs") refreshLogs({ silent: true, loading: false });
+  }, 1000);
+}
+
+async function bootstrapConsole() {
+  await refresh();
+  startRefreshTimer();
+}
+
+async function checkAuth() {
+  authChecking.value = true;
+  loginError.value = "";
+  stopRefreshTimer();
+  try {
+    const nextAuth = await fetchAuthStatus();
+    auth.value = nextAuth;
+    if (isAuthenticated(nextAuth)) {
+      await bootstrapConsole();
+    }
+  } catch (err) {
+    loginError.value = err instanceof Error ? err.message : "读取登录状态失败";
+  } finally {
+    authChecking.value = false;
+  }
+}
+
+async function handleLogin(payload: LoginPayload) {
+  loginLoading.value = true;
+  loginError.value = "";
+  try {
+    auth.value = await login(payload);
+    await bootstrapConsole();
+    message.success("登录成功");
+  } catch (err) {
+    loginError.value = err instanceof Error ? err.message : "登录失败";
+  } finally {
+    loginLoading.value = false;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await logout();
+  } catch {
+    // The local session is discarded even if the server is already gone.
+  }
+  stopRefreshTimer();
+  try {
+    auth.value = await fetchAuthStatus();
+  } catch {
+    auth.value = { auth_required: true, authenticated: false };
+  }
+}
+
 function setMapPickerVisible(value: boolean) {
   mapPickerVisible.value = value;
 }
@@ -90,25 +168,35 @@ function setMapContainerRef(value: HTMLElement | null) {
 }
 
 onMounted(() => {
-  refresh();
-  refreshTimer = window.setInterval(() => {
-    refresh({ quiet: true, silent: true });
-    if (activeTab.value === "logs") refreshLogs({ silent: true });
-  }, 5000);
+  removeAuthListener = onAuthChanged(() => {
+    stopRefreshTimer();
+    auth.value = { auth_required: true, authenticated: false };
+    message.warning("登录已失效，请重新登录");
+  });
+  checkAuth();
 });
 
 onUnmounted(() => {
-  if (refreshTimer) {
-    window.clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
+  stopRefreshTimer();
+  removeAuthListener?.();
   cleanupPickerMap();
 });
 </script>
 
 <template>
   <n-config-provider :theme-overrides="themeOverrides">
-    <n-layout class="app-layout">
+    <div v-if="authChecking" class="auth-loading">
+      <n-spin size="large" />
+    </div>
+
+    <LoginView
+      v-else-if="!isAuthenticated()"
+      :loading="loginLoading"
+      :error="loginError"
+      @login="handleLogin"
+    />
+
+    <n-layout v-else class="app-layout">
       <AppHeader
         :active-tab="activeTab"
         :logs-loading="logsLoading"
@@ -116,8 +204,12 @@ onUnmounted(() => {
         :saving="saving"
         :status="status"
         :runtime="runtime"
+        :user="auth?.user"
+        :auth-required="auth?.auth_required"
         @refresh="refreshActiveTab"
+        @toggle-proxy-enabled="toggleProxyEnabled"
         @toggle-enabled="toggleEnabled"
+        @logout="handleLogout"
       />
 
       <div class="app-tabs">
@@ -166,6 +258,7 @@ onUnmounted(() => {
     </n-layout>
 
     <MapPickerModal
+      v-if="isAuthenticated()"
       :show="mapPickerVisible"
       :place-search="placeSearch"
       :picked-lat-lng="pickedLatLng"

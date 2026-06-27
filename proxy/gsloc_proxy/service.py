@@ -6,42 +6,81 @@ import time
 from collections import deque
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from mitmproxy import certs
 
 from .config import load_policy, policy_to_dict
+from .log import (
+    DEFAULT_LOG_LEVEL,
+    GslocFileLogSink,
+    format_log_record,
+    normalize_log_level,
+    should_emit_log,
+)
 from .models import FavoriteLocation, ProxyPolicy, ProxySettings, RuntimeState, TargetState
 from .state import load_state, save_state, state_to_dict
 
 
+TerminalLogSink = Callable[[str, str], None]
+_FILE_SINK_UNSET = object()
+
+
 class GslocProxyService:
-    def __init__(self, state_path: Path, policy_path: Path, confdir: Path) -> None:
+    def __init__(
+        self,
+        state_path: Path,
+        policy_path: Path,
+        confdir: Path,
+        *,
+        log_level: str = DEFAULT_LOG_LEVEL,
+        terminal_log_level: str | None = None,
+        terminal_sink: TerminalLogSink | None = None,
+        file_sink: GslocFileLogSink | None = None,
+    ) -> None:
         self.state_path = state_path
         self.policy_path = policy_path
         self.confdir = confdir
+        self.log_level = normalize_log_level(log_level)
+        self.terminal_log_level = normalize_log_level(terminal_log_level or log_level)
+        self.terminal_sink = terminal_sink
+        self.file_sink = file_sink
         self.lock = threading.RLock()
         self.runtime: RuntimeState = load_state(state_path)
         self.policy: ProxyPolicy = load_policy(policy_path)
-        self.stats = {
-            "request_total": 0,
-            "pass_through_total": 0,
-            "reject_total": 0,
-            "patch_success": 0,
-            "patch_noop": 0,
-            "patch_error": 0,
-        }
-        self.events = deque(maxlen=1000)
-        self.next_event_id = 1
+        self.stats = self._empty_stats()
+        self.logs = deque(maxlen=1000)
+        self.next_log_id = 1
         self.last_patch: dict[str, Any] | None = None
 
-    def reload(self, state_path: Path, policy_path: Path, confdir: Path) -> None:
+    def reload(
+        self,
+        state_path: Path,
+        policy_path: Path,
+        confdir: Path,
+        *,
+        log_level: str | None = None,
+        terminal_log_level: str | None = None,
+        terminal_sink: TerminalLogSink | None = None,
+        file_sink: GslocFileLogSink | None | object = _FILE_SINK_UNSET,
+    ) -> None:
         runtime = load_state(state_path)
         policy = load_policy(policy_path)
         with self.lock:
             self.state_path = state_path
             self.policy_path = policy_path
             self.confdir = confdir
+            if log_level is not None:
+                self.log_level = normalize_log_level(log_level)
+            if terminal_log_level is not None:
+                self.terminal_log_level = normalize_log_level(terminal_log_level)
+            if terminal_sink is not None:
+                self.terminal_sink = terminal_sink
+            if file_sink is not _FILE_SINK_UNSET:
+                old_file_sink = self.file_sink
+                self.file_sink = file_sink if isinstance(file_sink, GslocFileLogSink) else None
+                if old_file_sink is not None and old_file_sink is not file_sink:
+                    old_file_sink.close()
             self.runtime = runtime
             self.policy = policy
 
@@ -49,9 +88,9 @@ class GslocProxyService:
         with self.lock:
             return ProxySettings(runtime=self.runtime, policy=self.policy)
 
-    def record_event(
+    def record_log(
         self,
-        event_type: str,
+        log_type: str,
         level: str,
         message: str,
         *,
@@ -63,10 +102,11 @@ class GslocProxyService:
         client: str | None = None,
         method: str | None = None,
         details: dict[str, Any] | None = None,
+        emit_terminal: bool = True,
     ) -> None:
         with self.lock:
-            self._append_event_locked(
-                event_type,
+            self._append_log_locked(
+                log_type,
                 level,
                 message,
                 layer=layer,
@@ -77,6 +117,7 @@ class GslocProxyService:
                 client=client,
                 method=method,
                 details=details,
+                emit_terminal=emit_terminal,
             )
 
     def record_request(
@@ -90,7 +131,7 @@ class GslocProxyService:
     ) -> None:
         with self.lock:
             self.stats["request_total"] += 1
-            self._append_event_locked(
+            self._append_log_locked(
                 "request",
                 "info",
                 "request received",
@@ -114,7 +155,7 @@ class GslocProxyService:
     ) -> None:
         with self.lock:
             self.stats["reject_total"] += 1
-            self._append_event_locked(
+            self._append_log_locked(
                 "reject",
                 "warning",
                 "request rejected",
@@ -138,7 +179,7 @@ class GslocProxyService:
     ) -> None:
         with self.lock:
             self.stats["pass_through_total"] += 1
-            self._append_event_locked(
+            self._append_log_locked(
                 "pass_through",
                 "info",
                 "request passed through",
@@ -204,7 +245,7 @@ class GslocProxyService:
         with self.lock:
             self.stats["patch_error"] += 1
             self.last_patch = patch_payload
-            self._append_event_locked(
+            self._append_log_locked(
                 "patch_error",
                 "error",
                 patch_payload.get("reason") or "patch error",
@@ -222,8 +263,8 @@ class GslocProxyService:
             policy = self.policy
             stats = dict(self.stats)
             last_patch = self.last_patch.copy() if self.last_patch is not None else None
-            log_count = len(self.events)
-            latest_log_id = self.events[-1]["id"] if self.events else None
+            log_count = len(self.logs)
+            latest_log_id = self.logs[-1]["id"] if self.logs else None
         ca_path = self.ca_cert_path()
         return {
             "runtime": state_to_dict(runtime),
@@ -237,6 +278,8 @@ class GslocProxyService:
             "logs": {
                 "count": log_count,
                 "latest_id": latest_log_id,
+                "level": self.log_level,
+                "terminal_level": self.terminal_log_level,
             },
             "web": {
                 "mode": "live",
@@ -255,7 +298,7 @@ class GslocProxyService:
             self._save_runtime_locked(runtime)
             runtime_data = state_to_dict(self.runtime)
             target_data = runtime_data["target"]
-            self._append_event_locked(
+            self._append_log_locked(
                 "runtime_target_updated",
                 "info",
                 "target updated",
@@ -286,7 +329,7 @@ class GslocProxyService:
             runtime = replace(self.runtime, favorites=favorites)
             self._save_runtime_locked(runtime)
             runtime_data = state_to_dict(self.runtime)
-            self._append_event_locked(
+            self._append_log_locked(
                 "runtime_favorite_added",
                 "info",
                 "favorite location saved",
@@ -306,7 +349,7 @@ class GslocProxyService:
             self._save_runtime_locked(runtime)
             runtime_data = state_to_dict(self.runtime)
             target_data = runtime_data["target"]
-            self._append_event_locked(
+            self._append_log_locked(
                 "runtime_mode_updated",
                 "info",
                 "mode updated",
@@ -324,7 +367,7 @@ class GslocProxyService:
             runtime = replace(self.runtime, enabled=enabled)
             self._save_runtime_locked(runtime)
             runtime_data = state_to_dict(self.runtime)
-            self._append_event_locked(
+            self._append_log_locked(
                 "runtime_enabled_updated",
                 "info",
                 "runtime enabled updated",
@@ -334,11 +377,66 @@ class GslocProxyService:
             )
         return {"ok": True, "enabled": enabled, "runtime": runtime_data}
 
+    def update_proxy_enabled(self, enabled: Any) -> dict[str, Any]:
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be boolean")
+        with self.lock:
+            previous = self.runtime.proxy_enabled
+            if previous == enabled:
+                runtime_data = state_to_dict(self.runtime)
+                self._append_log_locked(
+                    "proxy_enabled_unchanged",
+                    "info",
+                    "proxy session state unchanged",
+                    layer="runtime",
+                    source="service.runtime",
+                    details={"enabled": enabled, "session_id": self.runtime.session_id},
+                )
+                return {"ok": True, "proxy_enabled": enabled, "runtime": runtime_data}
+
+            if enabled:
+                session_id = self.runtime.session_id + 1
+                runtime = replace(
+                    self.runtime,
+                    proxy_enabled=True,
+                    session_id=session_id,
+                    session_started_at=time.time(),
+                )
+                self._save_runtime_locked(runtime)
+                self._reset_session_data_locked()
+                self._append_log_locked(
+                    "proxy_session_started",
+                    "success",
+                    "proxy session started",
+                    layer="runtime",
+                    source="service.runtime",
+                    details={"previous": previous, "next": enabled, "session_id": session_id},
+                )
+            else:
+                runtime = replace(self.runtime, proxy_enabled=False)
+                self._save_runtime_locked(runtime)
+                self._append_log_locked(
+                    "proxy_session_stopped",
+                    "warning",
+                    "proxy session stopped",
+                    layer="runtime",
+                    source="service.runtime",
+                    details={"previous": previous, "next": enabled, "session_id": self.runtime.session_id},
+                )
+            runtime_data = state_to_dict(self.runtime)
+        return {"ok": True, "proxy_enabled": enabled, "runtime": runtime_data}
+
     def reset_runtime_state(self) -> dict[str, Any]:
         with self.lock:
             previous = state_to_dict(self.runtime)
-            self._save_runtime_locked(RuntimeState())
-            self._append_event_locked(
+            self._save_runtime_locked(
+                RuntimeState(
+                    proxy_enabled=self.runtime.proxy_enabled,
+                    session_id=self.runtime.session_id,
+                    session_started_at=self.runtime.session_started_at,
+                )
+            )
+            self._append_log_locked(
                 "runtime_reset",
                 "warning",
                 "runtime state reset",
@@ -367,7 +465,7 @@ class GslocProxyService:
         ]
         existing = [path for path in ca_files if path.exists()]
         if existing and not regenerate:
-            self.record_event(
+            self.record_log(
                 "ca_exists",
                 "info",
                 "CA certificate already exists",
@@ -382,9 +480,9 @@ class GslocProxyService:
                 "ca": self.snapshot_status()["ca"],
             }
 
-        event_type = "ca_regenerate_started" if regenerate else "ca_generate_started"
-        self.record_event(
-            event_type,
+        log_type = "ca_regenerate_started" if regenerate else "ca_generate_started"
+        self.record_log(
+            log_type,
             "warning" if regenerate else "info",
             "CA regeneration started" if regenerate else "CA generation started",
             layer="ca",
@@ -403,7 +501,7 @@ class GslocProxyService:
                 cn="GSLOC-PROXY",
             )
         except Exception as exc:
-            self.record_event(
+            self.record_log(
                 "ca_generate_error",
                 "error",
                 f"CA generation failed: {type(exc).__name__}",
@@ -412,7 +510,7 @@ class GslocProxyService:
                 details={"error": str(exc), "confdir": str(confdir)},
             )
             raise
-        self.record_event(
+        self.record_log(
             "ca_generated",
             "success",
             "CA certificate generated",
@@ -432,14 +530,15 @@ class GslocProxyService:
 
         ctx.master.commands.call("gsloc.restart")
 
-    def snapshot_events(self, limit: int = 100) -> dict[str, Any]:
+    def snapshot_logs(self, limit: int = 100) -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 1000))
         with self.lock:
-            events = list(self.events)[-safe_limit:]
+            logs = list(self.logs)[-safe_limit:]
         return {
-            "events": events,
+            "logs": logs,
             "limit": safe_limit,
-            "count": len(events),
+            "count": len(logs),
+            "level": self.log_level,
         }
 
     def _record_patch(
@@ -456,7 +555,7 @@ class GslocProxyService:
         with self.lock:
             self.stats[key] += 1
             self.last_patch = patch_payload
-            self._append_event_locked(
+            self._append_log_locked(
                 key,
                 level,
                 message,
@@ -468,9 +567,9 @@ class GslocProxyService:
                 details=patch_payload,
             )
 
-    def _append_event_locked(
+    def _append_log_locked(
         self,
-        event_type: str,
+        log_type: str,
         level: str,
         message: str,
         *,
@@ -482,33 +581,78 @@ class GslocProxyService:
         client: str | None = None,
         method: str | None = None,
         details: dict[str, Any] | None = None,
+        emit_terminal: bool = True,
     ) -> dict[str, Any]:
-        event: dict[str, Any] = {
-            "id": self.next_event_id,
+        normalized_level = normalize_log_level(level)
+        if not should_emit_log(normalized_level, self.log_level):
+            return {}
+
+        record: dict[str, Any] = {
+            "id": self.next_log_id,
             "ts": time.time(),
-            "type": event_type,
-            "level": level,
+            "session_id": self.runtime.session_id,
+            "logger": "gsloc-proxy",
+            "type": log_type,
+            "level": normalized_level,
             "message": message,
         }
-        self.next_event_id += 1
+        self.next_log_id += 1
         if layer is not None:
-            event["layer"] = layer
+            record["layer"] = layer
         if source is not None:
-            event["source"] = source
+            record["source"] = source
         if host is not None:
-            event["host"] = host
+            record["host"] = host
         if path is not None:
-            event["path"] = path
+            record["path"] = path
         if status is not None:
-            event["status"] = status
+            record["status"] = status
         if client is not None:
-            event["client"] = client
+            record["client"] = client
         if method is not None:
-            event["method"] = method
+            record["method"] = method
         if details:
-            event["details"] = details
-        self.events.append(event)
-        return event
+            record["details"] = details
+        self.logs.append(record)
+        if emit_terminal:
+            self._emit_terminal_log_locked(record)
+        self._emit_file_log_locked(record)
+        return record
+
+    def _emit_terminal_log_locked(self, record: dict[str, Any]) -> None:
+        if self.terminal_sink is None:
+            return
+        if not should_emit_log(str(record.get("level") or "info"), self.terminal_log_level):
+            return
+        self.terminal_sink(str(record.get("level") or "info"), format_log_record(record))
+
+    def _emit_file_log_locked(self, record: dict[str, Any]) -> None:
+        if self.file_sink is None:
+            return
+        self.file_sink.emit(record)
+
+    def close(self) -> None:
+        with self.lock:
+            if self.file_sink is not None:
+                self.file_sink.close()
+                self.file_sink = None
+
+    @staticmethod
+    def _empty_stats() -> dict[str, int]:
+        return {
+            "request_total": 0,
+            "pass_through_total": 0,
+            "reject_total": 0,
+            "patch_success": 0,
+            "patch_noop": 0,
+            "patch_error": 0,
+        }
+
+    def _reset_session_data_locked(self) -> None:
+        self.stats = self._empty_stats()
+        self.logs.clear()
+        self.next_log_id = 1
+        self.last_patch = None
 
     def _save_runtime_locked(self, runtime: RuntimeState) -> None:
         save_state(runtime, self.state_path)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import logging
 import os
 import sys
 import threading
@@ -11,8 +12,10 @@ from mitmproxy import command, ctx, http
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from gsloc_proxy.auth import AuthManager, load_auth_config  # noqa: E402
 from gsloc_proxy.config import resolve_policy_path  # noqa: E402
 from gsloc_proxy.management import start_management_server  # noqa: E402
+from gsloc_proxy.log import GslocFileLogSink  # noqa: E402
 from gsloc_proxy.patcher import PatchTarget, patch_gsloc_payload  # noqa: E402
 from gsloc_proxy.policy import (  # noqa: E402
     describe_patch_decision,
@@ -24,10 +27,36 @@ from gsloc_proxy.service import GslocProxyService  # noqa: E402
 from gsloc_proxy.state import resolve_state_path  # noqa: E402
 
 
+class GslocMitmLogHandler(logging.Handler):
+    def __init__(self, addon: "GslocProxyAddon") -> None:
+        super().__init__()
+        self.addon = addon
+        self.setFormatter(logging.Formatter("%(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        service = self.addon.service
+        if service is None:
+            return
+        message = self.format(record)
+        if message.startswith("gsloc-proxy["):
+            return
+        service.record_log(
+            "mitmproxy_log",
+            self.addon._python_log_level(record.levelno),
+            message,
+            layer="mitmproxy",
+            source=record.name,
+            details={"levelno": record.levelno},
+            emit_terminal=False,
+        )
+
+
 class GslocProxyAddon:
     def __init__(self) -> None:
         self.service: GslocProxyService | None = None
         self.management_server = None
+        self.auth_manager: AuthManager | None = None
+        self.mitm_log_handler: GslocMitmLogHandler | None = None
 
     def load(self, loader):
         loader.add_option(
@@ -55,10 +84,64 @@ class GslocProxyAddon:
             help="gs-loc management HTTP API listen port.",
         )
         loader.add_option(
+            name="gsloc_manage_user",
+            typespec=str,
+            default=os.environ.get("GSLOC_MANAGE_USER", "admin"),
+            help="gs-loc management console username.",
+        )
+        loader.add_option(
+            name="gsloc_manage_password",
+            typespec=str,
+            default=os.environ.get("GSLOC_MANAGE_PASSWORD", ""),
+            help="gs-loc management console password. Leave empty to disable login in trusted local-only setups.",
+        )
+        loader.add_option(
             name="gsloc_restart_flag",
             typespec=str,
             default="",
             help="Path touched before programmatic restart so run-local.sh can restart mitmdump.",
+        )
+        loader.add_option(
+            name="gsloc_log_level",
+            typespec=str,
+            default=os.environ.get("GSLOC_LOG_LEVEL", "info"),
+            help="Minimum gsloc-proxy log level kept for Web/API logs: debug, info, success, warning, error.",
+        )
+        loader.add_option(
+            name="gsloc_terminal_log_level",
+            typespec=str,
+            default=os.environ.get("GSLOC_TERMINAL_LOG_LEVEL", os.environ.get("GSLOC_LOG_LEVEL", "info")),
+            help="Minimum gsloc-proxy log level emitted to the mitmdump terminal.",
+        )
+        loader.add_option(
+            name="gsloc_log_file",
+            typespec=str,
+            default=os.environ.get("GSLOC_LOG_FILE", ""),
+            help="Optional gsloc-proxy log file path. Disabled when empty.",
+        )
+        loader.add_option(
+            name="gsloc_file_log_level",
+            typespec=str,
+            default=os.environ.get("GSLOC_FILE_LOG_LEVEL", os.environ.get("GSLOC_LOG_LEVEL", "info")),
+            help="Minimum gsloc-proxy log level written to the log file.",
+        )
+        loader.add_option(
+            name="gsloc_log_format",
+            typespec=str,
+            default=os.environ.get("GSLOC_LOG_FORMAT", "jsonl"),
+            help="gsloc-proxy file log format: jsonl or text.",
+        )
+        loader.add_option(
+            name="gsloc_log_max_bytes",
+            typespec=int,
+            default=int(os.environ.get("GSLOC_LOG_MAX_BYTES", str(10 * 1024 * 1024))),
+            help="Maximum gsloc-proxy log file size before rotation.",
+        )
+        loader.add_option(
+            name="gsloc_log_backup_count",
+            typespec=int,
+            default=int(os.environ.get("GSLOC_LOG_BACKUP_COUNT", "5")),
+            help="Number of rotated gsloc-proxy log files to keep.",
         )
 
     def configure(self, updated):
@@ -66,20 +149,38 @@ class GslocProxyAddon:
             "gsloc_policy",
             "gsloc_state",
             "confdir",
+            "gsloc_log_level",
+            "gsloc_terminal_log_level",
+            "gsloc_log_file",
+            "gsloc_file_log_level",
+            "gsloc_log_format",
+            "gsloc_log_max_bytes",
+            "gsloc_log_backup_count",
         }.intersection(updated):
             policy_path, state_path, confdir = self._resolved_paths()
+            file_sink = self._make_file_log_sink()
             if self.service is None:
-                self.service = GslocProxyService(state_path=state_path, policy_path=policy_path, confdir=confdir)
+                self.service = GslocProxyService(
+                    state_path=state_path,
+                    policy_path=policy_path,
+                    confdir=confdir,
+                    log_level=ctx.options.gsloc_log_level,
+                    terminal_log_level=ctx.options.gsloc_terminal_log_level,
+                    terminal_sink=self._terminal_log,
+                    file_sink=file_sink,
+                )
             else:
-                self.service.reload(state_path=state_path, policy_path=policy_path, confdir=confdir)
+                self.service.reload(
+                    state_path=state_path,
+                    policy_path=policy_path,
+                    confdir=confdir,
+                    log_level=ctx.options.gsloc_log_level,
+                    terminal_log_level=ctx.options.gsloc_terminal_log_level,
+                    terminal_sink=self._terminal_log,
+                    file_sink=file_sink,
+                )
             settings = self.service.settings()
-            ctx.log.info(
-                "gsloc loaded: "
-                f"target={settings.runtime.target.lat},{settings.runtime.target.lng} "
-                f"mode={settings.runtime.target.mode} "
-                f"allow_rules={len(settings.policy.allow)}"
-            )
-            self.service.record_event(
+            self.service.record_log(
                 "config_loaded",
                 "info",
                 "gsloc proxy config loaded",
@@ -103,25 +204,45 @@ class GslocProxyAddon:
 
     def running(self) -> None:
         service = self._ensure_service()
+        self._install_mitm_log_handler()
         if self.management_server is not None:
             return
         host = ctx.options.gsloc_manage_host
         port = int(ctx.options.gsloc_manage_port)
         static_dir = Path(__file__).resolve().parent / "static"
-        self.management_server = start_management_server(service, host, port, static_dir)
-        ctx.log.info(f"gsloc management API listening on http://{host}:{port}")
-        service.record_event(
+        auth_config = load_auth_config(ctx.options.gsloc_manage_user, ctx.options.gsloc_manage_password)
+        self.auth_manager = AuthManager(auth_config)
+        self.management_server = start_management_server(service, host, port, static_dir, self.auth_manager)
+        service.record_log(
             "management_started",
             "info",
             f"management API listening on http://{host}:{port}",
             layer="management",
             source="addon.running",
-            details={"host": host, "port": port, "static_dir": str(static_dir)},
+            details={"host": host, "port": port, "static_dir": str(static_dir), "auth_enabled": auth_config.enabled},
         )
+        if auth_config.enabled:
+            service.record_log(
+                "management_auth_enabled",
+                "info",
+                f"management auth enabled for user {auth_config.username!r}",
+                layer="management",
+                source="addon.running",
+                details={"user": auth_config.username},
+            )
+        else:
+            service.record_log(
+                "management_auth_disabled",
+                "warning",
+                "management auth disabled; set GSLOC_MANAGE_PASSWORD to require login",
+                layer="management",
+                source="addon.running",
+            )
 
     def done(self) -> None:
+        self._uninstall_mitm_log_handler()
         if self.management_server is not None:
-            self._ensure_service().record_event(
+            self._ensure_service().record_log(
                 "management_stopped",
                 "info",
                 "management API stopped",
@@ -130,11 +251,13 @@ class GslocProxyAddon:
             )
             self.management_server.stop()
             self.management_server = None
+        if self.service is not None:
+            self.service.close()
 
     @command.command("gsloc.restart")
     def restart(self) -> None:
         restart_flag = getattr(ctx.options, "gsloc_restart_flag", "")
-        self._ensure_service().record_event(
+        self._ensure_service().record_log(
             "restart_requested",
             "warning",
             "proxy restart requested",
@@ -157,17 +280,21 @@ class GslocProxyAddon:
         service.record_request(host=host, path=path, method=method, client=client, details=decision)
         if should_reject_request(flow, settings):
             service.record_reject(host=host, path=path, method=method, client=client, details=decision)
-            ctx.log.warn(f"gsloc proxy rejected {method} {host}{path}: {decision.get('reason')}")
+            status_code = 503 if decision.get("reason") == "proxy_disabled" else 403
+            message = (
+                b"gsloc-proxy session is closed\n"
+                if decision.get("reason") == "proxy_disabled"
+                else b"gsloc-proxy only allows configured gs-loc traffic\n"
+            )
             flow.response = http.Response.make(
-                403,
-                b"gsloc-proxy only allows configured gs-loc traffic\n",
+                status_code,
+                message,
                 {"content-type": "text/plain; charset=utf-8"},
             )
         elif decision.get("action") == "pass_through":
             service.record_pass_through(host=host, path=path, method=method, client=client, details=decision)
-            ctx.log.info(f"gsloc proxy pass-through {method} {host}{path}: {decision.get('reason')}")
         else:
-            service.record_event(
+            service.record_log(
                 "patch_target",
                 "info",
                 "request matched patch target",
@@ -179,7 +306,6 @@ class GslocProxyAddon:
                 method=method,
                 details=decision,
             )
-            ctx.log.info(f"gsloc proxy patch target {method} {host}{path}")
 
     def response(self, flow: http.HTTPFlow) -> None:
         service = self._ensure_service()
@@ -187,7 +313,7 @@ class GslocProxyAddon:
         if not should_patch(flow, settings):
             decision = describe_patch_decision(flow, settings)
             if decision.get("action") != "reject":
-                service.record_event(
+                service.record_log(
                     "response_skip",
                     "info",
                     f"response not rewritten: {decision.get('reason')}",
@@ -234,7 +360,6 @@ class GslocProxyAddon:
                     status=self._flow_status(flow),
                     details={**metadata, "encoded_size": len(new_body)},
                 )
-                ctx.log.info(f"gsloc rewrote {service.snapshot_status()['last_patch']}")
             else:
                 service.record_patch_noop(
                     patch_stats,
@@ -243,7 +368,6 @@ class GslocProxyAddon:
                     status=self._flow_status(flow),
                     details={**metadata, "encoded_size": len(body)},
                 )
-                ctx.log.info(f"gsloc no rewrite {service.snapshot_status()['last_patch']}")
         except Exception as exc:
             target_state = settings.runtime.target
             service.record_patch_error(
@@ -261,7 +385,6 @@ class GslocProxyAddon:
                 path=self._flow_path(flow),
                 status=self._flow_status(flow),
             )
-            ctx.log.warn(f"gsloc patch error {type(exc).__name__}: {exc}")
             if settings.policy.failure.patch_error == "reject" and flow.response is not None:
                 flow.response = http.Response.make(
                     502,
@@ -272,8 +395,60 @@ class GslocProxyAddon:
     def _ensure_service(self) -> GslocProxyService:
         if self.service is None:
             policy_path, state_path, confdir = self._resolved_paths()
-            self.service = GslocProxyService(state_path=state_path, policy_path=policy_path, confdir=confdir)
+            self.service = GslocProxyService(
+                state_path=state_path,
+                policy_path=policy_path,
+                confdir=confdir,
+                log_level=ctx.options.gsloc_log_level,
+                terminal_log_level=ctx.options.gsloc_terminal_log_level,
+                terminal_sink=self._terminal_log,
+                file_sink=self._make_file_log_sink(),
+            )
         return self.service
+
+    @staticmethod
+    def _make_file_log_sink() -> GslocFileLogSink | None:
+        path = str(getattr(ctx.options, "gsloc_log_file", "") or "").strip()
+        if not path:
+            return None
+        return GslocFileLogSink(
+            path,
+            level=ctx.options.gsloc_file_log_level,
+            log_format=ctx.options.gsloc_log_format,
+            max_bytes=int(ctx.options.gsloc_log_max_bytes),
+            backup_count=int(ctx.options.gsloc_log_backup_count),
+        )
+
+    @staticmethod
+    def _terminal_log(level: str, message: str) -> None:
+        if level == "error":
+            ctx.log.error(message)
+        elif level == "warning":
+            ctx.log.warn(message)
+        else:
+            ctx.log.info(message)
+
+    def _install_mitm_log_handler(self) -> None:
+        if self.mitm_log_handler is not None:
+            return
+        self.mitm_log_handler = GslocMitmLogHandler(self)
+        logging.getLogger().addHandler(self.mitm_log_handler)
+
+    def _uninstall_mitm_log_handler(self) -> None:
+        if self.mitm_log_handler is None:
+            return
+        logging.getLogger().removeHandler(self.mitm_log_handler)
+        self.mitm_log_handler = None
+
+    @staticmethod
+    def _python_log_level(levelno: int) -> str:
+        if levelno >= logging.ERROR:
+            return "error"
+        if levelno >= logging.WARNING:
+            return "warning"
+        if levelno <= logging.DEBUG:
+            return "debug"
+        return "info"
 
     @staticmethod
     def _flow_host(flow: http.HTTPFlow) -> str:

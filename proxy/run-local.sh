@@ -39,12 +39,20 @@ while true; do
     --listen-port "${GSLOC_PROXY_PORT:-8080}" \
     --set "gsloc_policy=$POLICY_PATH" \
     --set "gsloc_state=$STATE_PATH" \
+    --set "gsloc_manage_user=${GSLOC_MANAGE_USER:-admin}" \
+    --set "gsloc_manage_password=${GSLOC_MANAGE_PASSWORD:-}" \
+    --set "gsloc_log_level=${GSLOC_LOG_LEVEL:-info}" \
+    --set "gsloc_terminal_log_level=${GSLOC_TERMINAL_LOG_LEVEL:-${GSLOC_LOG_LEVEL:-info}}" \
+    --set "gsloc_log_file=${GSLOC_LOG_FILE:-}" \
+    --set "gsloc_file_log_level=${GSLOC_FILE_LOG_LEVEL:-${GSLOC_LOG_LEVEL:-info}}" \
+    --set "gsloc_log_format=${GSLOC_LOG_FORMAT:-jsonl}" \
+    --set "gsloc_log_max_bytes=${GSLOC_LOG_MAX_BYTES:-10485760}" \
+    --set "gsloc_log_backup_count=${GSLOC_LOG_BACKUP_COUNT:-5}" \
     --set "gsloc_restart_flag=$RESTART_FLAG" \
     -s "$PWD/gsloc_proxy/addon.py"
   status=$?
   if [ -f "$RESTART_FLAG" ]; then
     rm -f "$RESTART_FLAG"
-    echo "gsloc restart requested; restarting mitmdump..." >&2
     continue
   fi
   exit "$status"

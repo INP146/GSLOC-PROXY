@@ -1,4 +1,7 @@
 {
+  "proxy_enabled": true,
+  "session_id": 1,
+  "session_started_at": null,
   "enabled": true,
   "target": {
     "lat": 0.0,

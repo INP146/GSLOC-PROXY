@@ -1,7 +1,9 @@
 import type {
   AppStatus,
+  AuthStatus,
   FavoriteLocation,
   GenerateCaResult,
+  LoginPayload,
   LogsResponse,
   RewriteMode,
   RuntimeMutationResult,
@@ -11,6 +13,27 @@ import type {
 interface RequestJsonOptions {
   method?: string;
   body?: unknown;
+  skipAuthRedirect?: boolean;
+}
+
+const AUTH_CHANGED_EVENT = "gsloc-auth-changed";
+let csrfToken = "";
+
+export function setCsrfToken(token?: string): void {
+  csrfToken = token || "";
+}
+
+export function getCsrfToken(): string {
+  return csrfToken;
+}
+
+export function notifyAuthChanged(): void {
+  window.dispatchEvent(new CustomEvent(AUTH_CHANGED_EVENT));
+}
+
+export function onAuthChanged(callback: () => void): () => void {
+  window.addEventListener(AUTH_CHANGED_EVENT, callback);
+  return () => window.removeEventListener(AUTH_CHANGED_EVENT, callback);
 }
 
 function errorMessage(err: unknown): string {
@@ -19,10 +42,11 @@ function errorMessage(err: unknown): string {
 
 async function requestJson<T>(
   path: string,
-  { method = "GET", body }: RequestJsonOptions = {},
+  { method = "GET", body, skipAuthRedirect = false }: RequestJsonOptions = {},
 ): Promise<T> {
   const options: RequestInit = {
     method,
+    credentials: "same-origin",
     headers: {},
   };
 
@@ -34,6 +58,10 @@ async function requestJson<T>(
     (options.headers as Record<string, string>)["Content-Type"] =
       "application/json";
     options.body = JSON.stringify(body);
+  }
+
+  if (method !== "GET" && csrfToken) {
+    (options.headers as Record<string, string>)["X-CSRF-Token"] = csrfToken;
   }
 
   let response: Response;
@@ -54,6 +82,10 @@ async function requestJson<T>(
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !skipAuthRedirect) {
+      setCsrfToken("");
+      notifyAuthChanged();
+    }
     const error =
       data && typeof data === "object" && "error" in data
         ? String(data.error)
@@ -62,6 +94,34 @@ async function requestJson<T>(
   }
 
   return data as T;
+}
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  const status = await requestJson<AuthStatus>("/api/auth/status", {
+    skipAuthRedirect: true,
+  });
+  setCsrfToken(status.csrf_token);
+  return status;
+}
+
+export async function login(payload: LoginPayload): Promise<AuthStatus> {
+  const status = await requestJson<AuthStatus>("/api/auth/login", {
+    method: "POST",
+    body: payload,
+    skipAuthRedirect: true,
+  });
+  setCsrfToken(status.csrf_token);
+  return status;
+}
+
+export async function logout(): Promise<AuthStatus> {
+  const status = await requestJson<AuthStatus>("/api/auth/logout", {
+    method: "POST",
+    body: {},
+    skipAuthRedirect: true,
+  });
+  setCsrfToken("");
+  return status;
 }
 
 export async function fetchStatus(): Promise<AppStatus> {
@@ -101,6 +161,15 @@ export async function updateEnabled(
   enabled: boolean,
 ): Promise<RuntimeMutationResult> {
   return requestJson<RuntimeMutationResult>("/api/runtime/enabled", {
+    method: "PUT",
+    body: { enabled },
+  });
+}
+
+export async function updateProxyEnabled(
+  enabled: boolean,
+): Promise<RuntimeMutationResult> {
+  return requestJson<RuntimeMutationResult>("/api/runtime/proxy-enabled", {
     method: "PUT",
     body: { enabled },
   });

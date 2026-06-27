@@ -1,17 +1,13 @@
-import type { LogEvent } from "../types";
+import type { GslocLogRecord } from "../types";
+import { formatTimestamp } from "./format";
 
 interface TerminalToken {
   text: string;
   class?: string;
 }
 
-function formatEventTimestamp(ts?: number): string {
-  if (!ts) return "----/--/-- --:--:--";
-  const date = new Date(ts * 1000);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+function formatLogTimestamp(ts?: number): string {
+  return ts ? formatTimestamp(ts) : "----/--/-- --:--:--";
 }
 
 function compactDetails(details?: Record<string, unknown>): string {
@@ -35,17 +31,27 @@ function terminalLevelClass(level?: string): string {
   return "terminal-token-info";
 }
 
-export function terminalLogTokens(event: LogEvent): TerminalToken[] {
+export function terminalLogTokens(event: GslocLogRecord): TerminalToken[] {
   const tokens: TerminalToken[] = [
-    { text: formatEventTimestamp(event.ts), class: "terminal-token-time" },
+    { text: formatLogTimestamp(event.ts), class: "terminal-token-time" },
     { text: " " },
     {
       text: (event.level || "info").toUpperCase().padEnd(7, " "),
       class: terminalLevelClass(event.level),
     },
     { text: " " },
-    { text: `[${event.layer || "system"}]`, class: "terminal-token-layer" },
+    {
+      text: `${event.logger || "gsloc-proxy"}[${event.layer || "system"}]`,
+      class: "terminal-token-layer",
+    },
   ];
+
+  if (event.session_id) {
+    tokens.push(
+      { text: " " },
+      { text: `session=${event.session_id}`, class: "terminal-token-source" },
+    );
+  }
 
   if (event.source) {
     tokens.push(

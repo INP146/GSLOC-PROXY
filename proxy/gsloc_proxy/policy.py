@@ -22,6 +22,13 @@ def describe_request_decision(flow: http.HTTPFlow, settings: ProxySettings) -> d
     rule = matching_rule(flow, settings.policy)
     host = flow.request.pretty_host or flow.request.host or ""
     path = flow.request.path or ""
+    if not settings.runtime.proxy_enabled:
+        return {
+            "action": "reject",
+            "reason": "proxy_disabled",
+            "host": host,
+            "path": path,
+        }
     if rule is None:
         return {
             "action": "reject",
@@ -46,6 +53,8 @@ def describe_request_decision(flow: http.HTTPFlow, settings: ProxySettings) -> d
 def describe_patch_decision(flow: http.HTTPFlow, settings: ProxySettings) -> dict[str, object]:
     request_decision = describe_request_decision(flow, settings)
     details = dict(request_decision)
+    if not settings.runtime.proxy_enabled:
+        return {**details, "action": "skip", "reason": "proxy_disabled"}
     if not settings.runtime.enabled:
         return {**details, "action": "skip", "reason": "runtime_disabled"}
     if not flow.response:
@@ -63,6 +72,8 @@ def is_patch_target(flow: http.HTTPFlow, settings: ProxySettings) -> bool:
 
 
 def should_patch(flow: http.HTTPFlow, settings: ProxySettings) -> bool:
+    if not settings.runtime.proxy_enabled:
+        return False
     if not settings.runtime.enabled:
         return False
     if not flow.response or not flow.response.raw_content:
@@ -73,6 +84,8 @@ def should_patch(flow: http.HTTPFlow, settings: ProxySettings) -> bool:
 def should_reject_request(flow: http.HTTPFlow, settings: ProxySettings) -> bool:
     # mitmproxy regular mode may receive only traffic that the client routed here.
     # Keep non-allowed traffic from accidentally using this service as a generic proxy.
+    if not settings.runtime.proxy_enabled:
+        return True
     rule = matching_rule(flow, settings.policy)
     if rule is None:
         return True

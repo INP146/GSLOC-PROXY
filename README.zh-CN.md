@@ -49,6 +49,7 @@
 
 - 代理入口默认监听 `127.0.0.1`；
 - 管理 Web/API 默认监听 `127.0.0.1`；
+- 管理控制台支持用户名/密码登录；设置 `GSLOC_MANAGE_PASSWORD` 后启用；
 - 非 allowlist host 会被拒绝，避免退化为通用代理；
 - 示例仅面向本地或可信局域网中的授权设备。
 
@@ -97,7 +98,14 @@ http://127.0.0.1:8090/
 
 ### `.env`
 
-控制进程启动参数，例如代理端口、管理 Web/API 监听地址、策略文件路径、运行时状态路径和 mitmproxy 配置目录。
+控制进程启动参数，例如代理端口、管理 Web/API 监听地址、控制台登录、策略文件路径、运行时状态路径和 mitmproxy 配置目录。
+
+管理控制台默认用户名为 `admin`。`GSLOC_MANAGE_PASSWORD` 留空时不要求登录，只适合默认 `127.0.0.1` 本机访问；如果将 `GSLOC_MANAGE_HOST` 改为 `0.0.0.0` 供可信局域网设备访问，请设置强密码：
+
+```bash
+GSLOC_MANAGE_USER=admin
+GSLOC_MANAGE_PASSWORD=change-this-to-a-long-random-password
+```
 
 ### `policy.json`
 

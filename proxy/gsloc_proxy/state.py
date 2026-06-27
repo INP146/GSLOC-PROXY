@@ -4,6 +4,7 @@ import json
 import math
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,12 @@ def load_state(path: str | os.PathLike[str] | None = None) -> RuntimeState:
         favorites_raw = []
 
     return RuntimeState(
+        proxy_enabled=bool(raw.get("proxy_enabled", True)),
+        session_id=_positive_int(raw.get("session_id", 1), "session_id"),
+        session_started_at=_optional_number(
+            raw.get("session_started_at", time.time()),
+            "session_started_at",
+        ),
         enabled=bool(raw.get("enabled", True)),
         target=TargetState(
             lat=_number(target_raw.get("lat", 31.230416), "target.lat"),
@@ -61,6 +68,9 @@ def load_state(path: str | os.PathLike[str] | None = None) -> RuntimeState:
 
 def state_to_dict(state: RuntimeState) -> dict[str, Any]:
     return {
+        "proxy_enabled": state.proxy_enabled,
+        "session_id": state.session_id,
+        "session_started_at": state.session_started_at,
         "enabled": state.enabled,
         "target": {
             "lat": state.target.lat,
@@ -113,6 +123,20 @@ def _number(value: Any, name: str) -> float:
     if not math.isfinite(number):
         raise ValueError(f"{name} must be finite")
     return number
+
+
+def _optional_number(value: Any, name: str) -> float | None:
+    if value is None:
+        return None
+    return _number(value, name)
+
+
+def _positive_int(value: Any, name: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    return max(1, number)
 
 
 def _favorite_from_raw(value: Any, index: int) -> FavoriteLocation | None:

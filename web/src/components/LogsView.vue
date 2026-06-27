@@ -2,11 +2,11 @@
 import { NIcon } from "naive-ui";
 import { DocumentTextOutline, RefreshOutline } from "@vicons/ionicons5";
 import { terminalLogTokens } from "../utils/logs";
-import type { LogEvent } from "../types";
+import type { GslocLogRecord } from "../types";
 
 withDefaults(
   defineProps<{
-    logRows?: LogEvent[];
+    logRows?: GslocLogRecord[];
     logsLoading?: boolean;
   }>(),
   {

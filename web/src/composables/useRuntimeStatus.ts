@@ -7,6 +7,7 @@ import {
   resetPreviewState,
   updateEnabled,
   updateMode,
+  updateProxyEnabled,
   updateTarget,
 } from "../api";
 import { targetRules } from "../config/runtime";
@@ -160,9 +161,22 @@ export function useRuntimeStatus(message: MessageApi) {
     try {
       await updateEnabled(!runtime.value.enabled);
       await refresh({ quiet: true });
-      message.success(runtime.value.enabled ? "已开启" : "已关闭");
+      message.success(runtime.value.enabled ? "已开启实验" : "已终止实验");
     } catch (err) {
-      message.error(getErrorMessage(err) || "切换开关失败");
+      message.error(getErrorMessage(err) || "切换实验失败");
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  async function toggleProxyEnabled() {
+    saving.value = true;
+    try {
+      await updateProxyEnabled(!runtime.value.proxy_enabled);
+      await refresh({ quiet: true });
+      message.success(runtime.value.proxy_enabled ? "已开启代理会话" : "已关闭代理会话");
+    } catch (err) {
+      message.error(getErrorMessage(err) || "切换代理开关失败");
     } finally {
       saving.value = false;
     }
@@ -258,6 +272,7 @@ export function useRuntimeStatus(message: MessageApi) {
     saveTarget,
     changeMode,
     toggleEnabled,
+    toggleProxyEnabled,
     resetState,
     favoriteCurrentTarget,
     applyFavoriteLocation,

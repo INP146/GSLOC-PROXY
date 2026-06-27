@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
-import type { AppStatus, RuntimeState } from "../src/types";
+import type { AppStatus, GslocLogRecord, RuntimeState } from "../src/types";
 
 type MockRuntime = RuntimeState & {
   enabled: boolean;
@@ -14,6 +14,9 @@ type MockRuntime = RuntimeState & {
 };
 
 const DEFAULT_RUNTIME: MockRuntime = {
+  proxy_enabled: true,
+  session_id: 1,
+  session_started_at: Date.now() / 1000,
   enabled: true,
   target: {
     lat: 31.230416,
@@ -45,6 +48,11 @@ const DEFAULT_POLICY = {
   },
 };
 
+const DEV_AUTH = {
+  username: "admin",
+  password: "admin",
+};
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -60,6 +68,17 @@ function sendJson(res: ServerResponse, payload: unknown, status = 200): void {
 
 function sendError(res: ServerResponse, error: string, status = 400): void {
   sendJson(res, { ok: false, error }, status);
+}
+
+function getCookie(req: IncomingMessage, name: string): string {
+  const header = req.headers.cookie || "";
+  const cookies = Object.fromEntries(
+    header
+      .split(";")
+      .map((part) => part.trim().split("="))
+      .filter((parts) => parts.length === 2),
+  );
+  return cookies[name] || "";
 }
 
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -124,6 +143,7 @@ export function mockBackendPlugin(): Plugin {
   const policy = clone(DEFAULT_POLICY);
   const stats = {
     request_total: 18,
+    pass_through_total: 0,
     reject_total: 1,
     patch_success: 12,
     patch_noop: 5,
@@ -136,6 +156,34 @@ export function mockBackendPlugin(): Plugin {
     reason: 'dev mock sample',
     sample: ['31.229910,121.474010 → 31.230416,121.473701'],
   };
+  let sessionToken = "";
+  let csrfToken = "";
+  let nextLogId = 1;
+  const logs: GslocLogRecord[] = [];
+
+  function recordLog(
+    type: string,
+    level: GslocLogRecord["level"],
+    message: string,
+    extra: Partial<GslocLogRecord> = {},
+  ): void {
+    logs.push({
+      id: nextLogId++,
+      ts: Date.now() / 1000,
+      session_id: runtime.session_id,
+      logger: "gsloc-proxy",
+      type,
+      level,
+      message,
+      ...extra,
+    });
+    if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+  }
+
+  recordLog("mock_started", "info", "mock gsloc-proxy backend started", {
+    layer: "management",
+    source: "web.dev.mockBackend",
+  });
 
   function snapshotStatus(): AppStatus {
     return {
@@ -146,6 +194,12 @@ export function mockBackendPlugin(): Plugin {
       ca: {
         available: false,
         url: '/ca.cer',
+      },
+      logs: {
+        count: logs.length,
+        latest_id: logs.length ? logs[logs.length - 1].id : null,
+        level: "info",
+        terminal_level: "info",
       },
       web: {
         mode: 'mock',
@@ -172,6 +226,62 @@ export function mockBackendPlugin(): Plugin {
         }
 
         try {
+          if (req.method === "GET" && pathname === "/api/auth/status") {
+            const authenticated = Boolean(sessionToken && getCookie(req, "gsloc_session") === sessionToken);
+            sendJson(res, {
+              auth_required: true,
+              authenticated,
+              user: authenticated ? DEV_AUTH.username : null,
+              csrf_token: authenticated ? csrfToken : undefined,
+            });
+            return;
+          }
+
+          if (req.method === "POST" && pathname === "/api/auth/login") {
+            const payload = await readJsonBody(req);
+            if (payload.username !== DEV_AUTH.username || payload.password !== DEV_AUTH.password) {
+              sendError(res, "invalid username or password", 401);
+              return;
+            }
+            sessionToken = "dev-session";
+            csrfToken = "dev-csrf";
+            res.setHeader("Set-Cookie", "gsloc_session=dev-session; Path=/; HttpOnly; SameSite=Strict");
+            sendJson(res, {
+              ok: true,
+              auth_required: true,
+              authenticated: true,
+              user: DEV_AUTH.username,
+              csrf_token: csrfToken,
+            });
+            return;
+          }
+
+          if (req.method === "POST" && pathname === "/api/auth/logout") {
+            sessionToken = "";
+            csrfToken = "";
+            res.setHeader("Set-Cookie", "gsloc_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict");
+            sendJson(res, {
+              ok: true,
+              auth_required: true,
+              authenticated: false,
+              user: null,
+            });
+            return;
+          }
+
+          if (!sessionToken || getCookie(req, "gsloc_session") !== sessionToken) {
+            sendError(res, "unauthorized", 401);
+            return;
+          }
+
+          if (
+            req.method !== "GET" &&
+            req.headers["x-csrf-token"] !== csrfToken
+          ) {
+            sendError(res, "invalid csrf token", 403);
+            return;
+          }
+
           if (req.method === "GET" && pathname === "/api/status") {
             sendJson(res, snapshotStatus());
             return;
@@ -182,12 +292,31 @@ export function mockBackendPlugin(): Plugin {
             return;
           }
 
+          if (req.method === "GET" && pathname === "/api/logs") {
+            const limit = Math.max(1, Math.min(Number(new URL(req.url || "/", "http://localhost").searchParams.get("limit") || 100), 1000));
+            const rows = logs.slice(-limit);
+            sendJson(res, {
+              logs: clone(rows),
+              count: rows.length,
+              limit,
+              level: "info",
+            });
+            return;
+          }
+
           if (req.method === "PUT" && pathname === "/api/runtime/target") {
             const payload = await readJsonBody(req);
             runtime.target.lat = numberInRange(payload.lat, "lat", -90, 90);
             runtime.target.lng = numberInRange(payload.lng, "lng", -180, 180);
             runtime.target.scale = numberInRange(payload.scale, "scale", 0, 10);
             runtime.target.name = payload.name == null ? "" : String(payload.name);
+            recordLog("runtime_target_updated", "info", "target updated", {
+              layer: "runtime",
+              source: "mock.runtime",
+              details: {
+                target: clone(runtime.target),
+              },
+            });
             lastPatch = {
               patched: 1,
               old_center: lastPatch?.target || [31.22991, 121.47401],
@@ -211,6 +340,11 @@ export function mockBackendPlugin(): Plugin {
               return;
             }
             runtime.target.mode = mode;
+            recordLog("runtime_mode_updated", "info", "mode updated", {
+              layer: "runtime",
+              source: "mock.runtime",
+              details: { mode },
+            });
             sendJson(res, {
               ok: true,
               target: clone(runtime.target),
@@ -226,6 +360,11 @@ export function mockBackendPlugin(): Plugin {
               return;
             }
             runtime.enabled = payload.enabled;
+            recordLog("runtime_enabled_updated", "info", "runtime enabled updated", {
+              layer: "runtime",
+              source: "mock.runtime",
+              details: { enabled: runtime.enabled },
+            });
             sendJson(res, {
               ok: true,
               enabled: runtime.enabled,
@@ -234,9 +373,46 @@ export function mockBackendPlugin(): Plugin {
             return;
           }
 
+          if (req.method === "PUT" && pathname === "/api/runtime/proxy-enabled") {
+            const payload = await readJsonBody(req);
+            if (typeof payload.enabled !== "boolean") {
+              sendError(res, "enabled must be boolean");
+              return;
+            }
+            const wasEnabled = Boolean(runtime.proxy_enabled);
+            runtime.proxy_enabled = payload.enabled;
+            if (!wasEnabled && runtime.proxy_enabled) {
+              runtime.session_id = Number(runtime.session_id || 1) + 1;
+              runtime.session_started_at = Date.now() / 1000;
+              stats.request_total = 0;
+              stats.pass_through_total = 0;
+              stats.reject_total = 0;
+              stats.patch_success = 0;
+              stats.patch_noop = 0;
+              stats.patch_error = 0;
+              lastPatch = null;
+              logs.length = 0;
+              nextLogId = 1;
+            }
+            recordLog(runtime.proxy_enabled ? "proxy_session_started" : "proxy_session_stopped", runtime.proxy_enabled ? "success" : "warning", runtime.proxy_enabled ? "proxy session started" : "proxy session stopped", {
+              layer: "runtime",
+              source: "mock.runtime",
+            });
+            sendJson(res, {
+              ok: true,
+              proxy_enabled: runtime.proxy_enabled,
+              runtime: clone(runtime),
+            });
+            return;
+          }
+
           if (req.method === "POST" && pathname === "/api/runtime/reset") {
             Object.assign(runtime, clone(DEFAULT_RUNTIME));
             lastPatch = null;
+            recordLog("runtime_reset", "warning", "runtime state reset", {
+              layer: "runtime",
+              source: "mock.runtime",
+            });
             sendJson(res, snapshotStatus());
             return;
           }

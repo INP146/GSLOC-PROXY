@@ -9,22 +9,32 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .auth import (
+    AuthManager,
+    auth_payload,
+    auth_status_for_denial,
+    make_clear_session_cookie,
+    make_session_cookie,
+    session_token_from_cookie_header,
+)
+
 
 class ManagementHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, server_address, RequestHandlerClass, service, static_dir: Path):
+    def __init__(self, server_address, RequestHandlerClass, service, static_dir: Path, auth: AuthManager):
         super().__init__(server_address, RequestHandlerClass)
         self.service = service
         self.static_dir = static_dir
+        self.auth = auth
 
 
 class ManagementServer:
-    def __init__(self, service, host: str, port: int, static_dir: Path) -> None:
+    def __init__(self, service, host: str, port: int, static_dir: Path, auth: AuthManager) -> None:
         self.host = host
         self.port = port
-        self.httpd = ManagementHTTPServer((host, port), ManagementHandler, service, static_dir)
+        self.httpd = ManagementHTTPServer((host, port), ManagementHandler, service, static_dir, auth)
         self.thread = threading.Thread(target=self.httpd.serve_forever, name="gsloc-management", daemon=True)
 
     def start(self) -> None:
@@ -41,18 +51,28 @@ class ManagementHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path in ("/api/status", "/status"):
+        if path == "/api/auth/status":
+            self.send_json(self.auth_response_payload())
+        elif path in ("/api/status", "/status"):
+            if not self.require_auth():
+                return
             self.send_json(self.server.service.snapshot_status())
         elif path in ("/api/metrics", "/metrics"):
+            if not self.require_auth():
+                return
             self.send_json(self.server.service.snapshot_status()["stats"])
         elif path == "/api/logs":
+            if not self.require_auth():
+                return
             query = parse_qs(urlparse(self.path).query)
             try:
                 limit = int(query.get("limit", ["100"])[0])
             except ValueError:
                 limit = 100
-            self.send_json(self.server.service.snapshot_events(limit=limit))
+            self.send_json(self.server.service.snapshot_logs(limit=limit))
         elif path == "/ca.cer":
+            if not self.require_auth():
+                return
             self.send_ca(head_only=False)
         else:
             self.send_static(path, head_only=False)
@@ -60,6 +80,8 @@ class ManagementHandler(BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:
         path = urlparse(self.path).path
         if path == "/ca.cer":
+            if not self.require_auth():
+                return
             self.send_ca(head_only=True)
         else:
             self.send_static(path, head_only=True)
@@ -68,16 +90,24 @@ class ManagementHandler(BaseHTTPRequestHandler):
         self.handle_runtime_mutation()
 
     def do_POST(self) -> None:
-        self.handle_runtime_mutation()
+        path = urlparse(self.path).path
+        if path == "/api/auth/login":
+            self.handle_login()
+        elif path == "/api/auth/logout":
+            self.handle_logout()
+        else:
+            self.handle_runtime_mutation()
 
     def handle_runtime_mutation(self) -> None:
         path = urlparse(self.path).path
+        if not self.require_auth(require_csrf=True):
+            return
         try:
             payload = self.read_json_body()
             if path == "/api/runtime/target":
                 result = self.server.service.update_target(payload)
                 self.send_json(result)
-                self.record_management_event(
+                self.record_management_log(
                     "management_runtime_mutation",
                     "info",
                     "runtime target mutation accepted",
@@ -87,7 +117,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
             elif path == "/api/runtime/favorites":
                 result = self.server.service.add_favorite_location(payload)
                 self.send_json(result)
-                self.record_management_event(
+                self.record_management_log(
                     "management_runtime_mutation",
                     "info",
                     "runtime favorite location accepted",
@@ -97,7 +127,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
             elif path == "/api/runtime/mode":
                 result = self.server.service.update_mode(payload.get("mode"))
                 self.send_json(result)
-                self.record_management_event(
+                self.record_management_log(
                     "management_runtime_mutation",
                     "info",
                     "runtime mode mutation accepted",
@@ -107,17 +137,27 @@ class ManagementHandler(BaseHTTPRequestHandler):
             elif path == "/api/runtime/enabled":
                 result = self.server.service.update_enabled(payload.get("enabled"))
                 self.send_json(result)
-                self.record_management_event(
+                self.record_management_log(
                     "management_runtime_mutation",
                     "info",
                     "runtime enabled mutation accepted",
                     status=HTTPStatus.OK,
                     details={"endpoint": path, "enabled": payload.get("enabled")},
                 )
+            elif path == "/api/runtime/proxy-enabled":
+                result = self.server.service.update_proxy_enabled(payload.get("enabled"))
+                self.send_json(result)
+                self.record_management_log(
+                    "management_runtime_mutation",
+                    "info",
+                    "runtime proxy session mutation accepted",
+                    status=HTTPStatus.OK,
+                    details={"endpoint": path, "enabled": payload.get("enabled")},
+                )
             elif path == "/api/runtime/reset":
                 result = self.server.service.reset_runtime_state()
                 self.send_json(result)
-                self.record_management_event(
+                self.record_management_log(
                     "management_runtime_mutation",
                     "warning",
                     "runtime reset accepted",
@@ -128,7 +168,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
                 regenerate = bool(payload.get("regenerate", False))
                 result = self.server.service.generate_ca(regenerate=regenerate)
                 self.send_json(result)
-                self.record_management_event(
+                self.record_management_log(
                     "management_ca_generate",
                     "warning" if regenerate else "info",
                     "CA generation requested",
@@ -139,7 +179,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
                     threading.Timer(0.2, self.server.service.request_restart).start()
             else:
                 self.send_json({"ok": False, "error": "not found"}, status=HTTPStatus.NOT_FOUND)
-                self.record_management_event(
+                self.record_management_log(
                     "management_not_found",
                     "warning",
                     "management endpoint not found",
@@ -148,7 +188,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
                 )
         except ValueError as exc:
             self.send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            self.record_management_event(
+            self.record_management_log(
                 "management_bad_request",
                 "warning",
                 str(exc),
@@ -160,7 +200,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
                 {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
-            self.record_management_event(
+            self.record_management_log(
                 "management_error",
                 "error",
                 f"management request failed: {type(exc).__name__}",
@@ -168,11 +208,67 @@ class ManagementHandler(BaseHTTPRequestHandler):
                 details={"endpoint": path, "error": str(exc)},
             )
 
+    def handle_login(self) -> None:
+        try:
+            payload = self.read_json_body()
+            result = self.server.auth.login(payload.get("username"), payload.get("password"))
+            if result is None:
+                self.send_json({"ok": False, "error": "invalid username or password"}, status=HTTPStatus.UNAUTHORIZED)
+                self.record_management_log(
+                    "management_login_failed",
+                    "warning",
+                    "management login failed",
+                    status=HTTPStatus.UNAUTHORIZED,
+                    details={"user": payload.get("username")},
+                )
+                return
+
+            token, session = result
+            self.send_json(
+                {"ok": True, **auth_payload(self.server.auth.config, session)},
+                headers={"Set-Cookie": make_session_cookie(token, session.expires_at)},
+            )
+            self.record_management_log(
+                "management_login",
+                "info",
+                "management login accepted",
+                status=HTTPStatus.OK,
+                details={"user": session.user, "auth_required": self.server.auth.config.enabled},
+            )
+        except ValueError as exc:
+            self.send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self.send_json(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def handle_logout(self) -> None:
+        token = session_token_from_cookie_header(self.headers.get("Cookie"))
+        session_info = self.server.auth.session_for_cookie_header(self.headers.get("Cookie"))
+        if session_info is not None:
+            _, session = session_info
+            if not self.server.auth.verify_csrf(session, self.headers.get("X-CSRF-Token")):
+                self.send_json({"ok": False, "error": "invalid csrf token"}, status=HTTPStatus.FORBIDDEN)
+                return
+        self.server.auth.logout(token)
+        self.send_json(
+            {"ok": True, **auth_payload(self.server.auth.config)},
+            headers={"Set-Cookie": make_clear_session_cookie()},
+        )
+        self.record_management_log(
+            "management_logout",
+            "info",
+            "management logout accepted",
+            status=HTTPStatus.OK,
+        )
+
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5173")
         self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, HEAD, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+        self.send_header("Access-Control-Allow-Credentials", "true")
         self.end_headers()
 
     def read_json_body(self) -> dict[str, Any]:
@@ -190,19 +286,30 @@ class ManagementHandler(BaseHTTPRequestHandler):
             raise ValueError("JSON body must be an object")
         return payload
 
-    def send_json(self, payload: Any, status: int | HTTPStatus = HTTPStatus.OK) -> None:
+    def send_json(
+        self,
+        payload: Any,
+        status: int | HTTPStatus = HTTPStatus.OK,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if self.is_dev_origin():
+            self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5173")
+            self.send_header("Access-Control-Allow-Credentials", "true")
+        if headers:
+            for name, value in headers.items():
+                self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
     def send_ca(self, head_only: bool) -> None:
         path = self.server.service.ca_cert_path()
         if not path.exists() or not path.is_file():
-            self.record_management_event(
+            self.record_management_log(
                 "management_ca_download",
                 "warning",
                 "CA certificate download failed: not found",
@@ -212,7 +319,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "CA certificate not found")
             return
         self.send_file(path, "application/x-x509-ca-cert", head_only=head_only)
-        self.record_management_event(
+        self.record_management_log(
             "management_ca_download",
             "info",
             "CA certificate downloaded",
@@ -255,9 +362,46 @@ class ManagementHandler(BaseHTTPRequestHandler):
         if not head_only:
             self.wfile.write(data)
 
-    def record_management_event(
+    def require_auth(self, *, require_csrf: bool = False) -> bool:
+        if not self.server.auth.is_enabled():
+            return True
+        session_info = self.server.auth.session_for_cookie_header(self.headers.get("Cookie"))
+        if session_info is None:
+            payload, status = auth_status_for_denial()
+            self.send_json(payload, status=status)
+            self.record_management_log(
+                "management_unauthorized",
+                "warning",
+                "management request unauthorized",
+                status=status,
+                details={"endpoint": urlparse(self.path).path},
+            )
+            return False
+        if require_csrf:
+            _, session = session_info
+            if not self.server.auth.verify_csrf(session, self.headers.get("X-CSRF-Token")):
+                self.send_json({"ok": False, "error": "invalid csrf token"}, status=HTTPStatus.FORBIDDEN)
+                self.record_management_log(
+                    "management_csrf_denied",
+                    "warning",
+                    "management request failed csrf validation",
+                    status=HTTPStatus.FORBIDDEN,
+                    details={"endpoint": urlparse(self.path).path},
+                )
+                return False
+        return True
+
+    def auth_response_payload(self) -> dict[str, Any]:
+        session_info = self.server.auth.session_for_cookie_header(self.headers.get("Cookie"))
+        session = session_info[1] if session_info is not None else None
+        return auth_payload(self.server.auth.config, session)
+
+    def is_dev_origin(self) -> bool:
+        return self.headers.get("Origin") == "http://127.0.0.1:5173"
+
+    def record_management_log(
         self,
-        event_type: str,
+        log_type: str,
         level: str,
         message: str,
         *,
@@ -265,8 +409,8 @@ class ManagementHandler(BaseHTTPRequestHandler):
         details: dict[str, Any] | None = None,
     ) -> None:
         client = self.client_address[0] if self.client_address else None
-        self.server.service.record_event(
-            event_type,
+        self.server.service.record_log(
+            log_type,
             level,
             message,
             layer="management",
@@ -282,7 +426,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
         return
 
 
-def start_management_server(service, host: str, port: int, static_dir: Path) -> ManagementServer:
-    server = ManagementServer(service, host, port, static_dir)
+def start_management_server(service, host: str, port: int, static_dir: Path, auth: AuthManager) -> ManagementServer:
+    server = ManagementServer(service, host, port, static_dir, auth)
     server.start()
     return server

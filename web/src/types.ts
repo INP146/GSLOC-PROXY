@@ -26,6 +26,9 @@ export interface RuntimeTarget {
 }
 
 export interface RuntimeState {
+  proxy_enabled?: boolean;
+  session_id?: number;
+  session_started_at?: number | null;
   enabled?: boolean;
   target?: RuntimeTarget;
   favorites?: Array<Partial<FavoriteLocation>>;
@@ -69,6 +72,12 @@ export interface AppStatus {
   stats?: Stats;
   last_patch?: LastPatch | null;
   ca?: CertificateState;
+  logs?: {
+    count?: number;
+    latest_id?: number | null;
+    level?: string;
+    terminal_level?: string;
+  };
   web?: {
     mode?: string;
   };
@@ -84,9 +93,11 @@ export interface GenerateCaResult {
 
 export type LogLevel = "success" | "warning" | "error" | "info" | string;
 
-export interface LogEvent {
+export interface GslocLogRecord {
   id?: number;
+  session_id?: number;
   ts?: number;
+  logger?: string;
   level?: LogLevel;
   layer?: string;
   source?: string;
@@ -101,7 +112,8 @@ export interface LogEvent {
 }
 
 export interface LogsResponse {
-  events?: LogEvent[];
+  logs?: GslocLogRecord[];
+  level?: string;
 }
 
 export interface MetricItem {
@@ -159,4 +171,17 @@ export interface MessageApi {
   success(message: string): void;
   warning(message: string): void;
   error(message: string): void;
+}
+
+export interface AuthStatus {
+  auth_required?: boolean;
+  authenticated?: boolean;
+  user?: string | null;
+  csrf_token?: string;
+  expires_at?: number;
+}
+
+export interface LoginPayload {
+  username: string;
+  password: string;
 }

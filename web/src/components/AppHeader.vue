@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { NIcon } from "naive-ui";
-import { LogoGithub, PowerOutline, RefreshOutline } from "@vicons/ionicons5";
+import {
+  LogOutOutline,
+  LogoGithub,
+  PowerOutline,
+  RefreshOutline,
+} from "@vicons/ionicons5";
 import type { AppStatus, RuntimeState } from "../types";
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     activeTab: string;
     logsLoading?: boolean;
@@ -11,19 +17,41 @@ withDefaults(
     saving?: boolean;
     status?: AppStatus | null;
     runtime: RuntimeState;
+    user?: string | null;
+    authRequired?: boolean;
   }>(),
   {
     logsLoading: false,
     loading: false,
     saving: false,
     status: null,
+    user: null,
+    authRequired: false,
   },
 );
 
 defineEmits<{
   refresh: [];
+  "toggle-proxy-enabled": [];
   "toggle-enabled": [];
+  logout: [];
 }>();
+
+function formatDuration(seconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(hours)}:${pad(minutes)}:${pad(remainingSeconds)}`;
+}
+
+const proxyButtonLabel = computed(() => {
+  if (!props.runtime.proxy_enabled) return "开启代理";
+  const startedAt = Number(props.runtime.session_started_at);
+  if (!Number.isFinite(startedAt)) return "00:00:00";
+  return formatDuration(Date.now() / 1000 - startedAt);
+});
 </script>
 
 <template>
@@ -41,25 +69,50 @@ defineEmits<{
     </div>
     <n-space class="header-actions" align="center" :size="10">
       <n-button
+        :type="runtime.proxy_enabled ? 'warning' : 'primary'"
+        :loading="saving"
+        :disabled="loading || !status"
+        @click="$emit('toggle-proxy-enabled')"
+      >
+        <template #icon>
+          <n-icon :component="PowerOutline" />
+        </template>
+        {{ proxyButtonLabel }}
+      </n-button>
+      <n-button
+        :type="runtime.enabled ? 'warning' : 'primary'"
         secondary
+        :loading="saving"
+        :disabled="loading || !status || !runtime.proxy_enabled"
+        @click="$emit('toggle-enabled')"
+      >
+        <template #icon>
+          <n-icon :component="PowerOutline" />
+        </template>
+        {{ runtime.enabled ? "终止实验" : "开启实验" }}
+      </n-button>
+      <n-button
+        class="header-icon-button"
+        secondary
+        aria-label="刷新"
         :loading="activeTab === 'logs' ? logsLoading : loading"
         @click="$emit('refresh')"
       >
         <template #icon>
           <n-icon :component="RefreshOutline" />
         </template>
-        刷新
       </n-button>
       <n-button
-        type="primary"
-        :loading="saving"
-        :disabled="loading || !status"
-        @click="$emit('toggle-enabled')"
+        type="warning"
+        class="header-icon-button"
+        v-if="authRequired"
+        secondary
+        aria-label="退出登录"
+        @click="$emit('logout')"
       >
         <template #icon>
-          <n-icon :component="PowerOutline" />
+          <n-icon :component="LogOutOutline" />
         </template>
-        {{ runtime.enabled ? "终止实验" : "开始实验" }}
       </n-button>
     </n-space>
   </n-layout-header>
