@@ -1,0 +1,20 @@
+{
+  "allow": [
+    {
+      "host": "gs-loc-cn.apple.com",
+      "paths": ["/clls/wloc"],
+      "pass_through_other_paths": true
+    },
+    {
+      "host": "gs-loc.apple.com",
+      "paths": ["/clls/wloc"],
+      "pass_through_other_paths": true
+    }
+  ],
+  "failure": {
+    "patch_error": "pass_through"
+  },
+  "logging": {
+    "sample_limit": 5
+  }
+}

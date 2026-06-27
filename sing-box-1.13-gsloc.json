@@ -1,0 +1,56 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "system",
+        "type": "local"
+      }
+    ],
+    "final": "system"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": ["172.19.0.1/30"],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "http",
+      "tag": "gsloc-proxy",
+      "server": "your-address",
+      "server_port": 18080
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "inbound": ["tun-in"],
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
+        "domain": ["gs-loc-cn.apple.com", "gs-loc.apple.com"],
+        "action": "route",
+        "outbound": "gsloc-proxy"
+      }
+    ],
+    "final": "direct"
+  }
+}

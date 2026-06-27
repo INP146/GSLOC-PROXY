@@ -1,0 +1,11 @@
+[project]
+name = "gsloc-proxy"
+version = "0.1.0"
+description = "用于授权实验环境的网络层定位完整性测试工具，帮助 App 开发者验证自家风控是否过度信任系统定位。"
+requires-python = ">=3.11"
+dependencies = [
+  "mitmproxy>=10.0",
+]
+
+[tool.py_compile]
+quiet = true

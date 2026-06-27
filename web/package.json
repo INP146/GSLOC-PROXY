@@ -1,0 +1,26 @@
+{
+  "name": "gsloc-proxy-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "dependencies": {
+    "@vicons/ionicons5": "^0.13.0",
+    "@vitejs/plugin-vue": "latest",
+    "leaflet": "^1.9.4",
+    "naive-ui": "^2.44.1",
+    "vite": "latest",
+    "vue": "latest",
+    "vue-tsc": "^3.1.8"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.20",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

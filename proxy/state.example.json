@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "target": {
+    "lat": 0.0,
+    "lng": 0.0,
+    "name": "Location Integrity Test Point",
+    "mode": "clamp",
+    "scale": 1.0
+  }
+}
