@@ -121,11 +121,41 @@ macOS/Linux users can also use the retained bash entry points:
 
 ## Docker Compose
 
-Build and start the all-in-one container:
+Docker deployment files live in `docker/`. There is one Compose file per deployment path:
+
+- `docker/compose.build.yml`: build and deploy from source.
+- `docker/compose.develop.yml`: deploy the `develop` image from GHCR.
+- `docker/compose.yml`: deploy a pinned release image from GHCR.
+
+Source build from a full repository checkout:
 
 ```bash
-docker compose up --build
+docker compose -f docker/compose.build.yml up --build -d
 ```
+
+This builds `docker/Dockerfile` and runs the local image `gsloc-proxy:local`.
+
+Deploy the `develop` image without cloning the full repository. Run this inside the directory containing `compose.develop.yml`:
+
+```bash
+docker compose -f compose.develop.yml pull
+docker compose -f compose.develop.yml up -d
+```
+
+For a pinned release image, edit `compose.yml` and set the image tag you want:
+
+```yaml
+image: ghcr.io/inp146/gsloc-proxy:0.1.0
+```
+
+Then run this in the same directory:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Git tag `v0.1.0` publishes GHCR image tags such as `0.1.0` and `0.1`.
 
 Default endpoints:
 
@@ -134,24 +164,32 @@ Management console: http://127.0.0.1:8090/
 Proxy endpoint:      127.0.0.1:8082
 ```
 
-The Compose setup builds the Web console into the Python image, publishes both ports to `127.0.0.1` on the host by default, mounts `proxy/policy.example.json` as the read-only policy, and stores runtime state, logs, and the mitmproxy CA in the `gsloc-proxy-data` Docker volume.
+The Compose setup publishes both ports to `127.0.0.1` on the host by default and stores runtime state, logs, and the mitmproxy CA in the `gsloc-proxy-data` Docker volume. The image includes the default example policy at `/config/policy.json`, so a single Compose file can start the service.
 
-Common overrides:
+Ports default to local-only access:
 
-```bash
-# Use your own private policy file.
-GSLOC_POLICY_FILE=./proxy/policy.json docker compose up --build
-
-# Require management console login.
-GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' docker compose up --build
-
-# Trusted LAN only: allow another authorized device to reach the proxy and console.
-GSLOC_COMPOSE_BIND=0.0.0.0 \
-GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' \
-docker compose up --build
+```yaml
+ports:
+  - "127.0.0.1:8082:8082"
+  - "127.0.0.1:8090:8090"
 ```
 
-Do not publish the service to the public internet. When binding to `0.0.0.0`, use it only on a trusted LAN with authorized devices and set a strong management password.
+For trusted LAN access, change `127.0.0.1` to `0.0.0.0` and set a strong `GSLOC_MANAGE_PASSWORD`. Do not publish the service to the public internet.
+
+To use a private policy file, add this bind mount to the selected Compose file:
+
+```yaml
+volumes:
+  - type: bind
+    source: ./policy.json
+    target: /config/policy.json
+    read_only: true
+    bind:
+      create_host_path: false
+  - gsloc-proxy-data:/data
+```
+
+Edit the selected Compose file directly for ports, management password, image version, or policy file.
 
 ## Configuration
 

@@ -119,11 +119,34 @@ macOS/Linux 用户也可以继续使用保留的 bash 入口：
 
 ## Docker Compose
 
-构建并启动一体化容器：
+Docker 部署文件集中放在 `docker/` 目录，每种部署路径对应一个 Compose 文件：
+
+- `docker/compose.build.yml`：从源码 build 并部署；
+- `docker/compose.develop.yml`：拉取 GHCR 的 `develop` 镜像部署；
+- `docker/compose.yml`：拉取 GHCR 的固定正式版本镜像部署。
+
+完整仓库 checkout 下从源码 build：
 
 ```bash
-docker compose up --build
+docker compose -f docker/compose.build.yml up --build -d
 ```
+
+这会构建 `docker/Dockerfile`，并运行本地镜像 `gsloc-proxy:local`。
+
+固定正式版本部署时，先编辑 `compose.yml`，设置需要的镜像 tag：
+
+```yaml
+image: ghcr.io/inp146/gsloc-proxy:0.1.0
+```
+
+然后在同一目录运行：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Git tag `v0.1.0` 会发布 `0.1.0` 和 `0.1` 这类 GHCR 镜像 tag。
 
 默认访问地址：
 
@@ -132,24 +155,32 @@ docker compose up --build
 代理入口：  127.0.0.1:8082
 ```
 
-Compose 会把 Web 控制台编译进 Python 镜像，默认只将两个端口发布到宿主机 `127.0.0.1`，只读挂载 `proxy/policy.example.json` 作为策略文件，并用 `gsloc-proxy-data` Docker volume 保存运行状态、日志和 mitmproxy CA。
+Compose 默认只将两个端口发布到宿主机 `127.0.0.1`，并用 `gsloc-proxy-data` Docker volume 保存运行状态、日志和 mitmproxy CA。镜像内置默认示例策略到 `/config/policy.json`，所以单个 Compose 文件即可启动服务。
 
-常用覆盖：
+端口默认只允许本机访问：
 
-```bash
-# 使用自己的私有策略文件。
-GSLOC_POLICY_FILE=./proxy/policy.json docker compose up --build
-
-# 给管理控制台启用登录。
-GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' docker compose up --build
-
-# 仅可信局域网：允许另一台授权设备访问代理和控制台。
-GSLOC_COMPOSE_BIND=0.0.0.0 \
-GSLOC_MANAGE_PASSWORD='change-this-to-a-long-random-password' \
-docker compose up --build
+```yaml
+ports:
+  - "127.0.0.1:8082:8082"
+  - "127.0.0.1:8090:8090"
 ```
 
-不要把服务暴露到公网。监听 `0.0.0.0` 时，仅限可信局域网和授权设备使用，并设置强管理密码。
+可信局域网访问时，把 `127.0.0.1` 改成 `0.0.0.0`，并设置强 `GSLOC_MANAGE_PASSWORD`。不要把服务暴露到公网。
+
+如需使用私有策略文件，在选中的 Compose 文件里添加这个只读挂载：
+
+```yaml
+volumes:
+  - type: bind
+    source: ./policy.json
+    target: /config/policy.json
+    read_only: true
+    bind:
+      create_host_path: false
+  - gsloc-proxy-data:/data
+```
+
+端口、管理密码、镜像版本、策略文件都直接在对应 Compose 文件里改。
 
 ## 配置说明
 

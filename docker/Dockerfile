@@ -22,12 +22,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
+    && mkdir -p /config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/proxy
 COPY proxy/pyproject.toml ./
 COPY proxy/gsloc_proxy ./gsloc_proxy
 COPY proxy/run-local.py ./
+COPY proxy/policy.example.json /config/policy.json
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -e .
 COPY --from=web-build /app/proxy/gsloc_proxy/static ./gsloc_proxy/static

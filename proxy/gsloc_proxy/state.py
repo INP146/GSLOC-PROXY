@@ -49,9 +49,9 @@ def load_state(path: str | os.PathLike[str] | None = None) -> RuntimeState:
         ),
         enabled=bool(raw.get("enabled", True)),
         target=TargetState(
-            lat=_number(target_raw.get("lat", 31.230416), "target.lat"),
-            lng=_number(target_raw.get("lng", 121.473701), "target.lng"),
-            name=str(target_raw.get("name", "中国上海市黄浦区人民广场")),
+            lat=_number(target_raw.get("lat", 0.0), "target.lat"),
+            lng=_number(target_raw.get("lng", 0.0), "target.lng"),
+            name=str(target_raw.get("name", "Authorized Test Location")),
             mode=str(target_raw.get("mode", "clamp")),
             scale=_number(target_raw.get("scale", 1.0), "target.scale"),
         ),

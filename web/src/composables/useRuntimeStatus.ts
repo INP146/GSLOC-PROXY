@@ -101,8 +101,8 @@ export function useRuntimeStatus(message: MessageApi) {
 
   function fillForm(nextStatus: AppStatus) {
     const nextTarget = nextStatus?.runtime?.target || {};
-    form.lat = Number(nextTarget.lat ?? 31.230416);
-    form.lng = Number(nextTarget.lng ?? 121.473701);
+    form.lat = Number(nextTarget.lat ?? 0.0);
+    form.lng = Number(nextTarget.lng ?? 0.0);
     form.name = nextTarget.name ?? "";
     form.scale = Number(nextTarget.scale ?? 1);
   }

@@ -19,9 +19,9 @@ const DEFAULT_RUNTIME: MockRuntime = {
   session_started_at: Date.now() / 1000,
   enabled: true,
   target: {
-    lat: 31.230416,
-    lng: 121.473701,
-    name: '中国上海市黄浦区人民广场',
+    lat: 0.0,
+    lng: 0.0,
+    name: 'Authorized Test Location',
     mode: 'clamp',
     scale: 1,
   },
@@ -151,10 +151,10 @@ export function mockBackendPlugin(): Plugin {
   };
   let lastPatch: AppStatus["last_patch"] = {
     patched: 1,
-    old_center: [31.22991, 121.47401],
+    old_center: [0.0001, -0.0001],
     target: [runtime.target.lat, runtime.target.lng],
     reason: 'dev mock sample',
-    sample: ['31.229910,121.474010 → 31.230416,121.473701'],
+    sample: ['0.000100,-0.000100 → 0.000000,0.000000'],
   };
   let sessionToken = "";
   let csrfToken = "";

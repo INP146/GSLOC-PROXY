@@ -192,7 +192,7 @@ function emitFormRef(el: Element | null) {
             >
               <n-input
                 v-model:value="form.name"
-                placeholder="中国上海市黄浦区人民广场"
+                placeholder="Authorized Test Location"
               />
             </n-form-item>
             <div class="form-grid">

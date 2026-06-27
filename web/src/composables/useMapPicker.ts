@@ -58,7 +58,7 @@ export function useMapPicker({ form, message }: UseMapPickerOptions) {
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
       return { lat, lng };
     }
-    return { lat: 31.230416, lng: 121.473701 };
+    return { lat: 0.0, lng: 0.0 };
   }
 
   async function reverseGeocodePickedLocation(lat: number, lng: number) {
