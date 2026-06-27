@@ -153,6 +153,19 @@ body {
   display: block;
 }
 
+.header-main .brand-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 22px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .header-copy {
   min-width: 0;
 }
@@ -812,6 +825,10 @@ body {
     font-size: 21px;
   }
 
+  .header-main .brand-title {
+    font-size: 20px;
+  }
+
   .header-main h1 {
     font-size: 22px;
   }
@@ -834,6 +851,12 @@ body {
 
   .summary-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .header-main .brand-title {
+    display: none;
   }
 }
 

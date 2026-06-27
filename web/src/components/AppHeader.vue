@@ -66,6 +66,7 @@ const proxyButtonLabel = computed(() => {
       >
         <n-icon :component="LogoGithub" />
       </a>
+      <h1 class="brand-title">GSLOC-PROXY</h1>
     </div>
     <n-space class="header-actions" align="center" :size="10">
       <n-button
