@@ -276,7 +276,7 @@ npm run build
 
 构建产物会输出到 `proxy/gsloc_proxy/static/`，该目录默认不进入仓库。
 
-GitHub Actions 会在提交到 `develop` 的 pull request 中检查 Docker 镜像构建；推送到 `develop` 或 `v0.1.0` 这类版本标签时，会发布镜像到 GitHub Container Registry：`ghcr.io/<owner>/<repo>`。
+GitHub Actions 会在提交到 `develop` 的 pull request 中检查 Docker 镜像构建；推送到 `develop` 或 `v0.1.0` 这类版本标签时，会发布 `linux/amd64` 和 `linux/arm64` 双架构镜像到 GitHub Container Registry：`ghcr.io/<owner>/<repo>`。
 
 ## 许可
 

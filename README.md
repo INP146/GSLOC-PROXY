@@ -278,7 +278,7 @@ npm run build
 
 The build output is written to `proxy/gsloc_proxy/static/`, which is not tracked by default.
 
-Docker image builds are checked by GitHub Actions on pull requests to `develop`. Pushes to `develop` and version tags such as `v0.1.0` publish images to GitHub Container Registry as `ghcr.io/<owner>/<repo>`.
+Docker image builds are checked by GitHub Actions on pull requests to `develop`. Pushes to `develop` and version tags such as `v0.1.0` publish multi-arch `linux/amd64` and `linux/arm64` images to GitHub Container Registry as `ghcr.io/<owner>/<repo>`.
 
 ## License
 
