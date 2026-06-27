@@ -309,11 +309,7 @@ class GslocProxyService:
         return {"ok": True, "target": target_data, "runtime": runtime_data}
 
     def add_favorite_location(self, payload: dict[str, Any]) -> dict[str, Any]:
-        lat = self._number_in_range(payload.get("lat"), "lat", -90, 90)
-        lng = self._number_in_range(payload.get("lng"), "lng", -180, 180)
-        scale = self._number_in_range(payload.get("scale", 1), "scale", 0, 10)
-        name = "" if payload.get("name") is None else str(payload.get("name")).strip()
-        favorite = FavoriteLocation(lat=lat, lng=lng, name=name, scale=scale)
+        favorite = self._favorite_from_payload(payload)
         favorite_key = self._favorite_key(favorite)
 
         with self.lock:
@@ -333,6 +329,30 @@ class GslocProxyService:
                 "runtime_favorite_added",
                 "info",
                 "favorite location saved",
+                layer="runtime",
+                source="service.runtime",
+                details={"previous_count": len(previous), "next_count": len(favorites)},
+            )
+        return {"ok": True, "favorites": runtime_data["favorites"], "runtime": runtime_data}
+
+    def remove_favorite_location(self, payload: dict[str, Any]) -> dict[str, Any]:
+        favorite = self._favorite_from_payload(payload)
+        favorite_key = self._favorite_key(favorite)
+
+        with self.lock:
+            previous = state_to_dict(self.runtime)["favorites"]
+            favorites = tuple(
+                item
+                for item in self.runtime.favorites
+                if self._favorite_key(item) != favorite_key
+            )
+            runtime = replace(self.runtime, favorites=favorites)
+            self._save_runtime_locked(runtime)
+            runtime_data = state_to_dict(self.runtime)
+            self._append_log_locked(
+                "runtime_favorite_removed",
+                "info",
+                "favorite location removed",
                 layer="runtime",
                 source="service.runtime",
                 details={"previous_count": len(previous), "next_count": len(favorites)},
@@ -669,6 +689,13 @@ class GslocProxyService:
         if number < minimum or number > maximum:
             raise ValueError(f"{name} must be between {minimum:g} and {maximum:g}")
         return number
+
+    def _favorite_from_payload(self, payload: dict[str, Any]) -> FavoriteLocation:
+        lat = self._number_in_range(payload.get("lat"), "lat", -90, 90)
+        lng = self._number_in_range(payload.get("lng"), "lng", -180, 180)
+        scale = self._number_in_range(payload.get("scale", 1), "scale", 0, 10)
+        name = "" if payload.get("name") is None else str(payload.get("name")).strip()
+        return FavoriteLocation(lat=lat, lng=lng, name=name, scale=scale)
 
     @staticmethod
     def _favorite_key(favorite: FavoriteLocation) -> tuple[float, float, str]:

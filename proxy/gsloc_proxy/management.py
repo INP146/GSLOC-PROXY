@@ -98,6 +98,9 @@ class ManagementHandler(BaseHTTPRequestHandler):
         else:
             self.handle_runtime_mutation()
 
+    def do_DELETE(self) -> None:
+        self.handle_runtime_mutation()
+
     def handle_runtime_mutation(self) -> None:
         path = urlparse(self.path).path
         if not self.require_auth(require_csrf=True):
@@ -115,14 +118,17 @@ class ManagementHandler(BaseHTTPRequestHandler):
                     details={"endpoint": path},
                 )
             elif path == "/api/runtime/favorites":
-                result = self.server.service.add_favorite_location(payload)
+                if self.command == "DELETE":
+                    result = self.server.service.remove_favorite_location(payload)
+                else:
+                    result = self.server.service.add_favorite_location(payload)
                 self.send_json(result)
                 self.record_management_log(
                     "management_runtime_mutation",
                     "info",
-                    "runtime favorite location accepted",
+                    "runtime favorite location mutation accepted",
                     status=HTTPStatus.OK,
-                    details={"endpoint": path},
+                    details={"endpoint": path, "method": self.command},
                 )
             elif path == "/api/runtime/mode":
                 result = self.server.service.update_mode(payload.get("mode"))
@@ -266,7 +272,7 @@ class ManagementHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5173")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
         self.send_header("Access-Control-Allow-Credentials", "true")
         self.end_headers()

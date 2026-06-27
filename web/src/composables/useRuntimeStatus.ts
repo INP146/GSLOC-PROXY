@@ -4,6 +4,7 @@ import {
   addFavoriteLocation,
   fetchStatus,
   generateCa,
+  removeFavoriteLocation,
   resetPreviewState,
   updateEnabled,
   updateMode,
@@ -72,6 +73,12 @@ export function useRuntimeStatus(message: MessageApi) {
       value: favorite.key,
     })),
   );
+  const currentFavorite = computed<FavoriteLocation | null>(() => {
+    const favorite = normalizeFavoriteLocation(form);
+    if (!favorite) return null;
+    return favoriteLocations.value.find((item) => item.key === favorite.key) || null;
+  });
+  const isCurrentTargetFavorited = computed(() => currentFavorite.value !== null);
   const canFavoriteCurrentTarget = computed(() => {
     const lat = Number(form.lat);
     const lng = Number(form.lng);
@@ -196,22 +203,25 @@ export function useRuntimeStatus(message: MessageApi) {
     }
   }
 
-  async function favoriteCurrentTarget() {
+  async function toggleFavoriteCurrentTarget() {
     const favorite = normalizeFavoriteLocation(form);
     if (!favorite) {
       message.warning("请先填写有效的经纬度");
       return;
     }
     try {
-      const result = await addFavoriteLocation(favorite);
+      const existing = favoriteLocations.value.find((item) => item.key === favorite.key);
+      const result = existing
+        ? await removeFavoriteLocation(existing)
+        : await addFavoriteLocation(favorite);
       if (result?.runtime) {
         status.value = { ...status.value, runtime: result.runtime };
         syncFavoriteLocations(result.runtime);
       }
-      selectedFavoriteKey.value = favorite.key;
-      message.success("已收藏地址");
+      selectedFavoriteKey.value = existing ? null : favorite.key;
+      message.success(existing ? "已取消收藏" : "已收藏地址");
     } catch (err) {
-      message.error(getErrorMessage(err) || "收藏地址失败");
+      message.error(getErrorMessage(err) || "更新收藏地址失败");
     }
   }
 
@@ -265,6 +275,7 @@ export function useRuntimeStatus(message: MessageApi) {
     caUrl,
     favoriteOptions,
     selectedFavoriteKey,
+    isCurrentTargetFavorited,
     canFavoriteCurrentTarget,
     lastPatchRows,
     rules: targetRules,
@@ -274,7 +285,7 @@ export function useRuntimeStatus(message: MessageApi) {
     toggleEnabled,
     toggleProxyEnabled,
     resetState,
-    favoriteCurrentTarget,
+    toggleFavoriteCurrentTarget,
     applyFavoriteLocation,
     handleGenerateCa,
   };

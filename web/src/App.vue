@@ -49,6 +49,7 @@ const {
   caUrl,
   favoriteOptions,
   selectedFavoriteKey,
+  isCurrentTargetFavorited,
   canFavoriteCurrentTarget,
   lastPatchRows,
   rules,
@@ -58,7 +59,7 @@ const {
   toggleEnabled,
   toggleProxyEnabled,
   resetState,
-  favoriteCurrentTarget,
+  toggleFavoriteCurrentTarget,
   applyFavoriteLocation,
   handleGenerateCa,
 } = runtimeState;
@@ -258,11 +259,12 @@ onUnmounted(() => {
           :ca-url="caUrl"
           :favorite-options="favoriteOptions"
           :selected-favorite-key="selectedFavoriteKey"
+          :is-current-target-favorited="isCurrentTargetFavorited"
           :can-favorite-current-target="canFavoriteCurrentTarget"
           @form-ref="setFormRef"
           @reset-state="resetState"
           @apply-favorite="applyFavoriteLocation"
-          @favorite-current="favoriteCurrentTarget"
+          @toggle-favorite-current="toggleFavoriteCurrentTarget"
           @open-map-picker="openMapPicker"
           @save-target="saveTarget"
           @change-mode="changeMode"

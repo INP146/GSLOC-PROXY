@@ -44,6 +44,7 @@ const props = withDefaults(
     caUrl: string;
     favoriteOptions?: SelectOption[];
     selectedFavoriteKey?: string | null;
+    isCurrentTargetFavorited?: boolean;
     canFavoriteCurrentTarget?: boolean;
   }>(),
   {
@@ -56,6 +57,7 @@ const props = withDefaults(
     lastPatchRows: () => [],
     favoriteOptions: () => [],
     selectedFavoriteKey: null,
+    isCurrentTargetFavorited: false,
     canFavoriteCurrentTarget: false,
   },
 );
@@ -64,7 +66,7 @@ const emit = defineEmits<{
   "form-ref": [value: FormInst | null];
   "reset-state": [];
   "apply-favorite": [key: string | null];
-  "favorite-current": [];
+  "toggle-favorite-current": [];
   "open-map-picker": [];
   "save-target": [];
   "change-mode": [mode: RewriteMode];
@@ -228,9 +230,9 @@ function emitFormRef(el: Element | null) {
               <n-button
                 secondary
                 :disabled="!canFavoriteCurrentTarget"
-                @click="emit('favorite-current')"
+                @click="emit('toggle-favorite-current')"
               >
-                收藏地址
+                {{ isCurrentTargetFavorited ? "取消收藏" : "收藏地址" }}
               </n-button>
               <n-button
                 secondary

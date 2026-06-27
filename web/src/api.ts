@@ -150,6 +150,15 @@ export async function addFavoriteLocation(
   });
 }
 
+export async function removeFavoriteLocation(
+  payload: FavoriteLocation,
+): Promise<RuntimeMutationResult> {
+  return requestJson<RuntimeMutationResult>("/api/runtime/favorites", {
+    method: "DELETE",
+    body: payload,
+  });
+}
+
 export async function updateMode(mode: RewriteMode): Promise<RuntimeMutationResult> {
   return requestJson<RuntimeMutationResult>("/api/runtime/mode", {
     method: "PUT",

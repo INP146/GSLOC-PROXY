@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
-import type { AppStatus, GslocLogRecord, RuntimeState } from "../src/types";
+import type { AppStatus, FavoriteLocation, GslocLogRecord, RuntimeState } from "../src/types";
 
 type MockRuntime = RuntimeState & {
   enabled: boolean;
@@ -136,6 +136,24 @@ function numberInRange(
 
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "mock backend error";
+}
+
+function favoriteKey(favorite: Partial<FavoriteLocation>): string {
+  return `${Number(favorite.lat).toFixed(8)},${Number(favorite.lng).toFixed(8)},${String(favorite.name || "").trim()}`;
+}
+
+function favoriteFromPayload(payload: Record<string, unknown>): FavoriteLocation {
+  const lat = numberInRange(payload.lat, "lat", -90, 90);
+  const lng = numberInRange(payload.lng, "lng", -180, 180);
+  const name = payload.name == null ? "" : String(payload.name).trim();
+  const scale = numberInRange(payload.scale ?? 1, "scale", 0, 10);
+  return {
+    key: favoriteKey({ lat, lng, name }),
+    lat,
+    lng,
+    name,
+    scale,
+  };
 }
 
 export function mockBackendPlugin(): Plugin {
@@ -327,6 +345,27 @@ export function mockBackendPlugin(): Plugin {
             sendJson(res, {
               ok: true,
               target: clone(runtime.target),
+              runtime: clone(runtime),
+            });
+            return;
+          }
+
+          if ((req.method === "POST" || req.method === "DELETE") && pathname === "/api/runtime/favorites") {
+            const payload = await readJsonBody(req);
+            const favorite = favoriteFromPayload(payload);
+            const key = favoriteKey(favorite);
+            runtime.favorites = (runtime.favorites || []).filter((item) => favoriteKey(item) !== key);
+            if (req.method === "POST") {
+              runtime.favorites.unshift(favorite);
+            }
+            recordLog(req.method === "POST" ? "runtime_favorite_added" : "runtime_favorite_removed", "info", req.method === "POST" ? "favorite location saved" : "favorite location removed", {
+              layer: "runtime",
+              source: "mock.runtime",
+              details: { key },
+            });
+            sendJson(res, {
+              ok: true,
+              favorites: clone(runtime.favorites || []),
               runtime: clone(runtime),
             });
             return;

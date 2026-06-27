@@ -135,13 +135,6 @@ docker compose -f docker/compose.build.yml up --build -d
 
 This builds `docker/Dockerfile` and runs the local image `gsloc-proxy:local`.
 
-Deploy the `develop` image without cloning the full repository. Run this inside the directory containing `compose.develop.yml`:
-
-```bash
-docker compose -f compose.develop.yml pull
-docker compose -f compose.develop.yml up -d
-```
-
 For a pinned release image, edit `compose.yml` and set the image tag you want:
 
 ```yaml
