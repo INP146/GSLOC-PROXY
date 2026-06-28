@@ -15,7 +15,7 @@ if __package__ in (None, ""):
 from gsloc_proxy.auth import AuthManager, load_auth_config  # noqa: E402
 from gsloc_proxy.config import resolve_policy_path  # noqa: E402
 from gsloc_proxy.management import start_management_server  # noqa: E402
-from gsloc_proxy.log import GslocFileLogSink  # noqa: E402
+from gsloc_proxy.log import GslocFileLogSink, GslocTerminalLogSink  # noqa: E402
 from gsloc_proxy.patcher import PatchTarget, patch_gsloc_payload  # noqa: E402
 from gsloc_proxy.policy import (  # noqa: E402
     describe_patch_decision,
@@ -165,8 +165,7 @@ class GslocProxyAddon:
                     policy_path=policy_path,
                     confdir=confdir,
                     log_level=ctx.options.gsloc_log_level,
-                    terminal_log_level=ctx.options.gsloc_terminal_log_level,
-                    terminal_sink=self._terminal_log,
+                    terminal_sink=self._make_terminal_log_sink(),
                     file_sink=file_sink,
                 )
             else:
@@ -175,8 +174,7 @@ class GslocProxyAddon:
                     policy_path=policy_path,
                     confdir=confdir,
                     log_level=ctx.options.gsloc_log_level,
-                    terminal_log_level=ctx.options.gsloc_terminal_log_level,
-                    terminal_sink=self._terminal_log,
+                    terminal_sink=self._make_terminal_log_sink(),
                     file_sink=file_sink,
                 )
             settings = self.service.settings()
@@ -400,11 +398,14 @@ class GslocProxyAddon:
                 policy_path=policy_path,
                 confdir=confdir,
                 log_level=ctx.options.gsloc_log_level,
-                terminal_log_level=ctx.options.gsloc_terminal_log_level,
-                terminal_sink=self._terminal_log,
+                terminal_sink=self._make_terminal_log_sink(),
                 file_sink=self._make_file_log_sink(),
             )
         return self.service
+
+    @staticmethod
+    def _make_terminal_log_sink() -> GslocTerminalLogSink:
+        return GslocTerminalLogSink(level=ctx.options.gsloc_terminal_log_level)
 
     @staticmethod
     def _make_file_log_sink() -> GslocFileLogSink | None:
@@ -418,15 +419,6 @@ class GslocProxyAddon:
             max_bytes=int(ctx.options.gsloc_log_max_bytes),
             backup_count=int(ctx.options.gsloc_log_backup_count),
         )
-
-    @staticmethod
-    def _terminal_log(level: str, message: str) -> None:
-        if level == "error":
-            ctx.log.error(message)
-        elif level == "warning":
-            ctx.log.warn(message)
-        else:
-            ctx.log.info(message)
 
     def _install_mitm_log_handler(self) -> None:
         if self.mitm_log_handler is not None:

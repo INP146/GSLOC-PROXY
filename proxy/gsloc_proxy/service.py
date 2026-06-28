@@ -6,7 +6,7 @@ import time
 from collections import deque
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from mitmproxy import certs
 
@@ -14,7 +14,7 @@ from .config import load_policy, policy_to_dict
 from .log import (
     DEFAULT_LOG_LEVEL,
     GslocFileLogSink,
-    format_log_record,
+    GslocTerminalLogSink,
     normalize_log_level,
     should_emit_log,
 )
@@ -22,8 +22,7 @@ from .models import FavoriteLocation, ProxyPolicy, ProxySettings, RuntimeState, 
 from .state import load_state, save_state, state_to_dict
 
 
-TerminalLogSink = Callable[[str, str], None]
-_FILE_SINK_UNSET = object()
+_SINK_UNSET = object()
 
 
 class GslocProxyService:
@@ -34,15 +33,13 @@ class GslocProxyService:
         confdir: Path,
         *,
         log_level: str = DEFAULT_LOG_LEVEL,
-        terminal_log_level: str | None = None,
-        terminal_sink: TerminalLogSink | None = None,
+        terminal_sink: GslocTerminalLogSink | None = None,
         file_sink: GslocFileLogSink | None = None,
     ) -> None:
         self.state_path = state_path
         self.policy_path = policy_path
         self.confdir = confdir
         self.log_level = normalize_log_level(log_level)
-        self.terminal_log_level = normalize_log_level(terminal_log_level or log_level)
         self.terminal_sink = terminal_sink
         self.file_sink = file_sink
         self.lock = threading.RLock()
@@ -60,9 +57,8 @@ class GslocProxyService:
         confdir: Path,
         *,
         log_level: str | None = None,
-        terminal_log_level: str | None = None,
-        terminal_sink: TerminalLogSink | None = None,
-        file_sink: GslocFileLogSink | None | object = _FILE_SINK_UNSET,
+        terminal_sink: GslocTerminalLogSink | None | object = _SINK_UNSET,
+        file_sink: GslocFileLogSink | None | object = _SINK_UNSET,
     ) -> None:
         runtime = load_state(state_path)
         policy = load_policy(policy_path)
@@ -72,11 +68,9 @@ class GslocProxyService:
             self.confdir = confdir
             if log_level is not None:
                 self.log_level = normalize_log_level(log_level)
-            if terminal_log_level is not None:
-                self.terminal_log_level = normalize_log_level(terminal_log_level)
-            if terminal_sink is not None:
-                self.terminal_sink = terminal_sink
-            if file_sink is not _FILE_SINK_UNSET:
+            if terminal_sink is not _SINK_UNSET:
+                self.terminal_sink = terminal_sink if isinstance(terminal_sink, GslocTerminalLogSink) else None
+            if file_sink is not _SINK_UNSET:
                 old_file_sink = self.file_sink
                 self.file_sink = file_sink if isinstance(file_sink, GslocFileLogSink) else None
                 if old_file_sink is not None and old_file_sink is not file_sink:
@@ -279,7 +273,7 @@ class GslocProxyService:
                 "count": log_count,
                 "latest_id": latest_log_id,
                 "level": self.log_level,
-                "terminal_level": self.terminal_log_level,
+                "terminal_level": self.terminal_sink.level if self.terminal_sink is not None else None,
             },
             "web": {
                 "mode": "live",
@@ -642,9 +636,7 @@ class GslocProxyService:
     def _emit_terminal_log_locked(self, record: dict[str, Any]) -> None:
         if self.terminal_sink is None:
             return
-        if not should_emit_log(str(record.get("level") or "info"), self.terminal_log_level):
-            return
-        self.terminal_sink(str(record.get("level") or "info"), format_log_record(record))
+        self.terminal_sink.emit(record)
 
     def _emit_file_log_locked(self, record: dict[str, Any]) -> None:
         if self.file_sink is None:

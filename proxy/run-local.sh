@@ -34,6 +34,8 @@ while true; do
   rm -f "$RESTART_FLAG"
   .venv/bin/mitmdump \
     --set "confdir=$MITMPROXY_CONF_DIR" \
+    --set "flow_detail=0" \
+    --set "termlog_verbosity=error" \
     --mode regular \
     --listen-host 127.0.0.1 \
     --listen-port "${GSLOC_PROXY_PORT:-8082}" \
