@@ -41,13 +41,13 @@ def load_state(path: str | os.PathLike[str] | None = None) -> RuntimeState:
         favorites_raw = []
 
     return RuntimeState(
-        proxy_enabled=bool(raw.get("proxy_enabled", True)),
+        proxy_enabled=bool(raw.get("proxy_enabled", False)),
         session_id=_positive_int(raw.get("session_id", 1), "session_id"),
         session_started_at=_optional_number(
             raw.get("session_started_at", time.time()),
             "session_started_at",
         ),
-        enabled=bool(raw.get("enabled", True)),
+        enabled=bool(raw.get("enabled", False)),
         target=TargetState(
             lat=_number(target_raw.get("lat", 0.0), "target.lat"),
             lng=_number(target_raw.get("lng", 0.0), "target.lng"),

@@ -110,6 +110,23 @@ python run-local.py
 
 启动后可以在控制台中生成或下载当前 mitmproxy CA 证书。授权测试设备需要安装并信任该 CA，否则 HTTPS 实验链路无法建立。
 
+复制得到的 `state.json` 默认关闭代理会话和实验。请先配置实验位置、在授权测试设备上安装 CA，准备好后再从控制台开启会话和实验。
+
+### 4. 设置授权 iPhone
+
+如果 iPhone 需要从你的电脑访问 Web 控制台，请只在可信局域网内开放代理和管理端口，并在开放前设置强 `GSLOC_MANAGE_PASSWORD`。
+
+在授权 iPhone 上：
+
+1. 用 Safari 打开 Web 控制台。
+2. 点击下载 CA 证书，并允许 iOS 下载配置描述文件。
+3. 进入“设置 > 通用 > VPN 与设备管理”，安装下载好的 `GSLOC-PROXY` 证书描述文件。
+4. 进入“设置 > 通用 > 关于本机 > 证书信任设置”，将 `GSLOC-PROXY` 证书设为完全信任。
+5. 返回 Web 控制台，配置实验位置和信号变换模式，然后开启代理会话和实验。
+6. 进入“设置 > 隐私与安全性 > 定位服务”（部分系统显示为“隐私 > 定位服务”），先关闭定位服务再重新开启，使设备刷新定位服务状态。
+
+同一台设备后续测试通常可以跳过证书安装和信任步骤，除非重新生成了代理 CA，或设备上的证书描述文件已被移除。
+
 macOS/Linux 用户也可以继续使用保留的 bash 入口：
 
 ```bash
@@ -133,15 +150,16 @@ docker compose -f docker/compose.build.yml up --build -d
 
 这会构建 `docker/Dockerfile`，并运行本地镜像 `gsloc-proxy:local`。
 
-固定正式版本部署时，先编辑 `compose.yml`，设置需要的镜像 tag：
+固定正式版本部署时，先编辑 `docker/compose.yml`，设置需要的镜像 tag：
 
 ```yaml
 image: ghcr.io/inp146/gsloc-proxy:0.1.0
 ```
 
-然后在同一目录运行：
+然后在 `docker/` 目录运行：
 
 ```bash
+cd docker
 docker compose pull
 docker compose up -d
 ```
@@ -156,6 +174,8 @@ Git tag `v0.1.0` 会发布 `0.1.0` 和 `0.1` 这类 GHCR 镜像 tag。
 ```
 
 Compose 默认只将两个端口发布到宿主机 `127.0.0.1`，并用 `gsloc-proxy-data` Docker volume 保存运行状态、日志和 mitmproxy CA。首次启动时，镜像会从源码中的 `policy.example.json` 和 `state.example.json` 初始化缺失的 `/config/policy.json` 和 `/data/state.json`，与本地部署的复制逻辑一致；Docker volume 中已有的文件不会被覆盖。
+
+容器镜像内部监听 `0.0.0.0`，由 Compose 的端口绑定控制宿主机暴露范围。如果不使用这些 Compose 文件而是直接运行镜像，请将发布端口绑定到 `127.0.0.1`；只有在可信局域网且已设置强 `GSLOC_MANAGE_PASSWORD` 时，才考虑开放给局域网访问。
 
 端口默认只允许本机访问：
 
@@ -208,6 +228,7 @@ GSLOC_MANAGE_PASSWORD=change-this-to-a-long-random-password
 Web 控制台提供以下功能：
 
 - 查看代理和实验状态；
+- 开启或关闭代理会话和实验；
 - 设置本次完整性测试使用的模拟上游位置；
 - 切换信号变换模式；
 - 查看最近一次测试结果；

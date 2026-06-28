@@ -112,6 +112,23 @@ python run-local.py
 
 After startup, the console can generate or download the current mitmproxy CA certificate. The authorized test device must install and trust that CA, otherwise the HTTPS test chain cannot be established.
 
+The copied `state.json` starts with the proxy session and experiment disabled. Configure the test location, install the CA on the authorized test device, and then enable the session and experiment from the console when you are ready to run the test.
+
+### 4. Set Up an Authorized iPhone
+
+If the iPhone needs to access the Web console from your computer, make the proxy and management endpoints reachable only on a trusted LAN, and set a strong `GSLOC_MANAGE_PASSWORD` before doing so.
+
+On the authorized iPhone:
+
+1. Open the Web console in Safari.
+2. Tap the CA certificate download button and allow iOS to download the configuration profile.
+3. Go to Settings > General > VPN & Device Management, then install the downloaded `GSLOC-PROXY` certificate profile.
+4. Go to Settings > General > About > Certificate Trust Settings, then fully trust the `GSLOC-PROXY` certificate.
+5. Return to the Web console, configure the test location and signal transformation mode, then enable the proxy session and experiment.
+6. Go to Settings > Privacy & Security > Location Services, turn Location Services off, then turn it back on so the device refreshes its location-service state.
+
+For later tests on the same device, you can usually skip the certificate installation and trust steps unless the proxy CA was regenerated or the device profile was removed.
+
 macOS/Linux users can also use the retained bash entry points:
 
 ```bash
@@ -135,15 +152,16 @@ docker compose -f docker/compose.build.yml up --build -d
 
 This builds `docker/Dockerfile` and runs the local image `gsloc-proxy:local`.
 
-For a pinned release image, edit `compose.yml` and set the image tag you want:
+For a pinned release image, edit `docker/compose.yml` and set the image tag you want:
 
 ```yaml
 image: ghcr.io/inp146/gsloc-proxy:0.1.0
 ```
 
-Then run this in the same directory:
+Then run this from the `docker/` directory:
 
 ```bash
+cd docker
 docker compose pull
 docker compose up -d
 ```
@@ -158,6 +176,8 @@ Proxy endpoint:      127.0.0.1:8082
 ```
 
 The Compose setup publishes both ports to `127.0.0.1` on the host by default and stores runtime state, logs, and the mitmproxy CA in the `gsloc-proxy-data` Docker volume. On first start, the image seeds missing `/config/policy.json` and `/data/state.json` from the source `policy.example.json` and `state.example.json`, matching the local copy-based setup. Existing files in the Docker volume are preserved.
+
+The container image listens on `0.0.0.0` inside the container so Compose port bindings can control host exposure. If you run the image without these Compose files, bind published ports to `127.0.0.1` unless you are on a trusted LAN and have set a strong `GSLOC_MANAGE_PASSWORD`.
 
 Ports default to local-only access:
 
@@ -210,6 +230,7 @@ Stores runtime experiment state, including whether the experiment is enabled, th
 The Web console provides:
 
 - Proxy and experiment status.
+- Proxy session and experiment enable/disable controls.
 - Simulated upstream location for the current integrity test.
 - Signal transformation mode switching.
 - Latest test result.
