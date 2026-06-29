@@ -27,7 +27,7 @@
       "type": "http",
       "tag": "gsloc-proxy",
       "server": "your-address",
-      "server_port": 18080
+      "server_port": 8082
     },
     {
       "type": "direct",

@@ -123,16 +123,27 @@ python run-local.py
 3. 进入“设置 > 通用 > VPN 与设备管理”，安装下载好的 `GSLOC-PROXY` 证书描述文件。
 4. 进入“设置 > 通用 > 关于本机 > 证书信任设置”，将 `GSLOC-PROXY` 证书设为完全信任。
 5. 返回 Web 控制台，配置实验位置和信号变换模式，然后开启代理会话和实验。
-6. 进入“设置 > 隐私与安全性 > 定位服务”（部分系统显示为“隐私 > 定位服务”），先关闭定位服务再重新开启，使设备刷新定位服务状态。
 
 同一台设备后续测试通常可以跳过证书安装和信任步骤，除非重新生成了代理 CA，或设备上的证书描述文件已被移除。
 
-macOS/Linux 用户也可以继续使用保留的 bash 入口：
+### 5. 配置客户端路由
 
-```bash
-./setup-venv.sh
-./run-local.sh
+使用你自己控制的网络工具，例如 sing-box、ClashMi、Surge、Stash、Quantumult X、Loon 或等价的实验路由器，只将配置中的 Apple 定位服务 host 转发到 `GSLOC-PROXY` 代理入口。
+
+sing-box 可以从这个示例文件开始：
+
+```text
+docs/example/sing-box-1.13.json
 ```
+
+使用前需要调整：
+
+- 将 `outbounds[].server` 改为运行 `GSLOC-PROXY` 的机器地址；
+- 将 `outbounds[].server_port` 改为代理端口，默认是 `8082`；
+- 保持路由规则与 `policy.json` 一致；
+- 无关流量保持直连，或按你的实验策略进行限制。
+
+路由工具生效后，在授权 iPhone 上进入“设置 > 隐私与安全性 > 定位服务”（部分系统显示为“隐私 > 定位服务”），先关闭定位服务再重新开启，使设备刷新定位服务状态。
 
 ## Docker Compose
 
@@ -242,7 +253,23 @@ Web 控制台提供以下功能：
 
 本项目不提供通用代理服务，也不接管设备全局流量。授权测试设备应使用用户自己控制的网络工具，仅将实验所需的定位服务请求转发到 `GSLOC-PROXY`。
 
-仓库中的 `docs/example/sing-box-1.13.json` 是本地实验路由示例。请根据你的授权测试环境调整地址、端口和网络范围。
+`GSLOC-PROXY` 本身是一个 HTTP CONNECT 代理入口，不运行 TUN/VPN 接口。sing-box、mihomo、Surge、Quantumult X 或等价的实验路由工具可以放在它前面，负责客户端侧路由：
+
+- 从授权测试设备或实验网络接入流量；
+- 只匹配配置中的 Apple 定位服务 host，例如 `policy.json` 中的 host；
+- 将匹配到的请求转发到 `GSLOC-PROXY` 的 HTTP 代理入口；
+- 其他无关流量按你的实验策略直连或阻断。
+
+仓库中的 `docs/example/sing-box-1.13.json` 是本地实验路由示例。使用时需要注意：
+
+- `outbounds[].server` 应改成路由工具能够访问到的 `GSLOC-PROXY` 所在机器地址；
+- `outbounds[].server_port` 应与 `GSLOC_PROXY_PORT` 一致，默认是 `8082`；
+- 路由规则中的域名应与 `policy.json` 里的 allowlist host 保持一致；
+- final route 应保持直连或其他受限策略，避免把实验环境变成通用代理。
+
+如果路由工具和 `GSLOC-PROXY` 运行在同一台机器上，代理地址通常可以使用 `127.0.0.1:8082`。如果 iPhone 需要通过可信局域网访问代理，请将代理监听到可访问的局域网接口，在路由工具里使用该局域网地址，并在开放管理控制台前设置强 `GSLOC_MANAGE_PASSWORD`。
+
+授权测试设备仍然需要安装并信任本地 mitmproxy CA。仅配置客户端路由，不足以完成 HTTPS 响应处理。
 
 ## 防御建议
 

@@ -125,16 +125,27 @@ On the authorized iPhone:
 3. Go to Settings > General > VPN & Device Management, then install the downloaded `GSLOC-PROXY` certificate profile.
 4. Go to Settings > General > About > Certificate Trust Settings, then fully trust the `GSLOC-PROXY` certificate.
 5. Return to the Web console, configure the test location and signal transformation mode, then enable the proxy session and experiment.
-6. Go to Settings > Privacy & Security > Location Services, turn Location Services off, then turn it back on so the device refreshes its location-service state.
 
 For later tests on the same device, you can usually skip the certificate installation and trust steps unless the proxy CA was regenerated or the device profile was removed.
 
-macOS/Linux users can also use the retained bash entry points:
+### 5. Configure Client Routing
 
-```bash
-./setup-venv.sh
-./run-local.sh
+Use a network tool you control, such as sing-box, ClashMi, Surge, Stash, Quantumult X, Loon, or an equivalent lab router, to forward only the configured Apple location-service hosts to the `GSLOC-PROXY` proxy endpoint.
+
+For sing-box, start from the example file:
+
+```text
+docs/example/sing-box-1.13.json
 ```
+
+Adjust the example before use:
+
+- set `outbounds[].server` to the address of the machine running `GSLOC-PROXY`;
+- set `outbounds[].server_port` to the proxy port, which defaults to `8082`;
+- keep the route rules aligned with `policy.json`;
+- keep unrelated traffic direct or otherwise restricted by your lab policy.
+
+After the routing tool is active, go to Settings > Privacy & Security > Location Services on the authorized iPhone, turn Location Services off, and turn it back on so the device refreshes its location-service state.
 
 ## Docker Compose
 
@@ -244,7 +255,23 @@ The console is an experimental helper interface and must not be exposed to the p
 
 This project does not provide a general-purpose proxy service and does not take over global device traffic. Authorized test devices should use a network tool controlled by the user to forward only the required location-service requests to `GSLOC-PROXY`.
 
-The repository includes `docs/example/sing-box-1.13.json` as a local experiment routing example. Adjust addresses, ports, and network ranges for your authorized test environment.
+`GSLOC-PROXY` itself is an HTTP CONNECT proxy endpoint. It does not run a TUN/VPN interface. Tools such as sing-box, mihomo, Surge, Quantumult X, or an equivalent lab router can sit in front of it and perform the client-side routing:
+
+- capture traffic from the authorized test device or lab network;
+- match only the configured Apple location-service hostnames, such as the hosts in `policy.json`;
+- forward those matched requests to the `GSLOC-PROXY` HTTP proxy endpoint;
+- leave unrelated traffic direct or blocked according to your lab policy.
+
+The repository includes `docs/example/sing-box-1.13.json` as a local experiment routing example. In that file:
+
+- `outbounds[].server` should be the address of the machine running `GSLOC-PROXY` as seen from the routing tool;
+- `outbounds[].server_port` should match `GSLOC_PROXY_PORT`, which defaults to `8082`;
+- the route rule domains should stay aligned with the allowed hosts in `policy.json`;
+- the final route should remain direct or otherwise restricted so the setup does not become a general-purpose proxy.
+
+If the routing tool and `GSLOC-PROXY` run on the same machine, the proxy address can usually be `127.0.0.1:8082`. If an iPhone reaches the proxy through a trusted LAN, bind the proxy to a reachable LAN interface, use that LAN address in the routing tool, and set a strong `GSLOC_MANAGE_PASSWORD` before exposing the management console to the LAN.
+
+The authorized test device still needs to install and trust the local mitmproxy CA. Client routing alone is not enough for HTTPS response processing.
 
 ## Defensive Guidance
 
