@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
-from http.cookies import SimpleCookie
+from http.cookies import CookieError, SimpleCookie
 from typing import Any
 
 
@@ -106,7 +106,7 @@ def session_token_from_cookie_header(cookie_header: str | None) -> str | None:
     cookie = SimpleCookie()
     try:
         cookie.load(cookie_header)
-    except Exception:
+    except (CookieError, UnicodeError):
         return None
     morsel = cookie.get(SESSION_COOKIE_NAME)
     return morsel.value if morsel is not None else None
