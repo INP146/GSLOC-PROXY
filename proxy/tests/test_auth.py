@@ -35,6 +35,16 @@ class SessionCookieTests(unittest.TestCase):
             "Path=/; HttpOnly; SameSite=Strict",
         )
 
+    def test_session_cookie_clamps_expired_session_lifetime_to_zero(self) -> None:
+        with patch("gsloc_proxy.auth.time.time", return_value=1_000.0):
+            cookie = make_session_cookie("session-token", 999.0)
+
+        self.assertEqual(
+            cookie,
+            f"{SESSION_COOKIE_NAME}=session-token; Max-Age=0; "
+            "Path=/; HttpOnly; SameSite=Strict",
+        )
+
     def test_clear_cookie_expires_immediately(self) -> None:
         self.assertEqual(
             make_clear_session_cookie(),
