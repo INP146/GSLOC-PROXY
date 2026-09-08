@@ -53,6 +53,15 @@ class SessionCookieTests(unittest.TestCase):
 
 
 class AuthManagerTests(unittest.TestCase):
+    def test_login_rejects_non_string_credentials(self) -> None:
+        manager = AuthManager(AuthConfig(username="admin", password="secret", enabled=True))
+
+        self.assertIsNone(manager.login(None, "secret"))
+        self.assertIsNone(manager.login("admin", None))
+        self.assertIsNone(manager.login(123, "secret"))
+        self.assertIsNone(manager.login("admin", 123))
+        self.assertEqual(manager.sessions, {})
+
     def test_expired_session_is_removed(self) -> None:
         manager = AuthManager(AuthConfig(username="admin", password="", enabled=False))
         with patch("gsloc_proxy.auth.time.time", return_value=500.0):
