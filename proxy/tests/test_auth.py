@@ -74,6 +74,20 @@ class AuthManagerTests(unittest.TestCase):
             )
         self.assertNotIn(token, manager.sessions)
 
+    def test_login_prunes_expired_sessions(self) -> None:
+        manager = AuthManager(AuthConfig(username="admin", password="", enabled=False))
+        with patch("gsloc_proxy.auth.time.time", return_value=500.0):
+            expired_token, _ = manager.login(None, None)  # type: ignore[misc]
+
+        with patch(
+            "gsloc_proxy.auth.time.time",
+            return_value=500.0 + SESSION_TTL_SECONDS,
+        ):
+            active_token, _ = manager.login(None, None)  # type: ignore[misc]
+
+        self.assertNotIn(expired_token, manager.sessions)
+        self.assertIn(active_token, manager.sessions)
+
 
 if __name__ == "__main__":
     unittest.main()
