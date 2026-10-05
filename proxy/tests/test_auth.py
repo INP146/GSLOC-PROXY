@@ -67,6 +67,8 @@ class AuthManagerTests(unittest.TestCase):
 
         self.assertIsNone(manager.login("Admin", "secret"))
         self.assertIsNone(manager.login("admin", "secret "))
+        self.assertIsNone(manager.login("管理员", "secret"))
+        self.assertIsNone(manager.login("admin", "密碼"))
         self.assertEqual(manager.sessions, {})
 
         result = manager.login("admin", "secret")

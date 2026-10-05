@@ -53,9 +53,9 @@ class AuthManager:
             return self._create_session(self.config.username)
         if not isinstance(username, str) or not isinstance(password, str):
             return None
-        if not secrets.compare_digest(username, self.config.username):
+        if not hmac.compare_digest(username.encode(), self.config.username.encode()):
             return None
-        if not secrets.compare_digest(password, self.config.password):
+        if not hmac.compare_digest(password.encode(), self.config.password.encode()):
             return None
         return self._create_session(username)
 
